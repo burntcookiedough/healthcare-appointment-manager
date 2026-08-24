@@ -191,10 +191,16 @@ def test_calendar_delete_resolves_trusted_provider_reference() -> None:
 def test_canonical_and_legacy_llm_task_kinds_are_explicit() -> None:
     for task_kind in ("pre_visit", "post_visit", "plain_language_summary"):
         assert ClinicalSummaryRequest(task_kind=task_kind).task_kind == task_kind
-    assert ClinicalSummaryRequest(task_kind="pre_visit_brief").task_kind == "pre_visit"
-    assert ClinicalSummaryRequest(task_kind="post_visit_summary").task_kind == "post_visit"
+    assert (
+        ClinicalSummaryRequest.model_validate({"task_kind": "pre_visit_brief"}).task_kind
+        == "pre_visit"
+    )
+    assert (
+        ClinicalSummaryRequest.model_validate({"task_kind": "post_visit_summary"}).task_kind
+        == "post_visit"
+    )
     with pytest.raises(ValidationError):
-        ClinicalSummaryRequest(task_kind="unsupported_summary")
+        ClinicalSummaryRequest.model_validate({"task_kind": "unsupported_summary"})
 
 
 def test_invalid_llm_task_kind_is_terminal_without_payload_logging(
