@@ -13,7 +13,7 @@ service and it must be exercised with synthetic data only.
 | Web | Patient, doctor, and admin Next.js experiences call a typed HTTP adapter when configured and switch to deterministic fixtures only with explicit `NEXT_PUBLIC_DEMO_MODE=true`. |
 | API | FastAPI process with health, auth/profile, doctor/schedule/leave, availability/holds/appointments, visits/symptoms/prescriptions, reminders, and integration-status routes under `/api/v1`. |
 | Database | PostgreSQL 17 migrations `0001_booking_foundation` and `0002_application_domain` with booking, clinical source, generated-artifact, reminder, integration, history, leave-preview, outbox, and audit tables. |
-| Worker | Durable PostgreSQL outbox claim/lease/retry poller plus Celery transport boundary, typed provider adapters, deterministic fakes, bounded concurrency, and PHI-minimizing logs. Provider delivery remains explicitly degraded until a trusted resolver is configured. |
+| Worker | Durable PostgreSQL outbox claim/lease/retry poller plus Celery transport boundary, typed provider adapters, deterministic fakes, bounded concurrency, and PHI-minimizing logs. The production poller defaults to `PostgresTrustedDataResolver`; provider delivery degrades only for missing provider credentials or trusted-reference resolution failure. |
 | API client gate | Runtime OpenAPI is available, but a reviewed committed artifact and generated Orval client are still pending. See [docs/API_GUIDE.md](docs/API_GUIDE.md) before enabling hosted web HTTP mode. |
 
 No hosted URL, production credential, provider account, or deployment is claimed by
@@ -202,9 +202,11 @@ uv run python -m healthcare_worker --poller
 
 The `--poller-dry-run` option validates process wiring without opening PostgreSQL or
 contacting a provider. The Celery process above is an optional transport/task boundary,
-not the sole outbox drain. Provider adapters fail closed when credentials or the trusted
-data resolver are absent; that degraded state never invalidates a committed appointment
-or overwrites source text.
+not the sole outbox drain. The production poller factory defaults to
+`PostgresTrustedDataResolver`, bound to the outbox store's PostgreSQL pool. Provider
+adapters fail closed only when required provider credentials are missing or trusted-reference
+resolution fails; that degraded state never invalidates a committed appointment or
+overwrites source text.
 
 ## Tests and checks
 
@@ -225,6 +227,10 @@ silently skipped:
 cd apps/api
 uv sync --locked --extra dev
 uv run alembic upgrade head
+# macOS/Linux (POSIX)
+HEALTHCARE_TEST_DATABASE_URL="postgresql://healthcare:healthcare@localhost:5432/healthcare" uv run pytest
+
+# Windows PowerShell
 $env:HEALTHCARE_TEST_DATABASE_URL = "postgresql://healthcare:healthcare@localhost:5432/healthcare"
 uv run pytest
 ```
@@ -250,7 +256,7 @@ services for the full API suite and worker environment but never sends provider 
 | `401 AUTHENTICATION_REQUIRED` locally | Load `infra/seed-demo.sql`, set `AUTH_ALLOW_LOCAL_TEST_TOKENS=true` in development, and use `test:demo.patient` (or the matching seeded subject). Hosted production requires a verified Supabase JWT. |
 | Hold returns `SLOT_CONFLICT` | Availability is advisory. Check the doctor ID, UTC offset, configured duration, working hours, leave, and other active holds/appointments. Retry with a new idempotency key only for a new user intent. |
 | Hold returns `HOLD_EXPIRED` | The server/database clock owns expiry. Create a new hold; do not extend a client countdown. |
-| Worker starts but no provider call occurs | Verify the durable poller command, `HEALTHCARE_WORKER_DATABASE_URL`, migrated `outbox_events`, and safe provider/resolver configuration. Celery transport alone does not drain PostgreSQL outbox rows; missing resolver/provider settings intentionally degrade. |
+| Worker starts but no provider call occurs | Verify the durable poller command, `HEALTHCARE_WORKER_DATABASE_URL`, migrated `outbox_events`, and safe provider/resolver configuration. Celery transport alone does not drain PostgreSQL outbox rows; missing provider credentials or trusted-reference resolution failures intentionally degrade. |
 | Vercel or Render build cannot find the package | Re-check the monorepo root settings and the service-specific `rootDir`, then use the exact commands in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). |
 
 ## Documentation and deployment
@@ -279,11 +285,12 @@ caches, worktrees, local `.env` files, and untracked build output:
 git archive --format=zip --prefix=healthcare-appointment-manager/ --output=healthcare-appointment-manager-source.zip HEAD
 ```
 
-Inspect the archive with a portable listing command before sharing it:
+Inspect the archive with a ZIP-aware listing command before sharing it:
 
 ```text
-tar -tf healthcare-appointment-manager-source.zip
-# or: unzip -l healthcare-appointment-manager-source.zip
+unzip -l healthcare-appointment-manager-source.zip
+# or, on any platform with Python:
+python -m zipfile -l healthcare-appointment-manager-source.zip
 ```
 
 Also verify `git ls-files` contains no `.env` other than `.env.example`. Do not create

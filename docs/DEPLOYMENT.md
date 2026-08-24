@@ -46,10 +46,12 @@ therefore changes only a projection status, never committed scheduling or clinic
 
 The worker package's durable poller claims PostgreSQL `outbox_events` with bounded batch,
 lease, fencing, retry, and concurrency settings. Celery smoke/start commands are useful
-for transport checks but must not be presented as the only outbox drain. The current
-runtime factory has no trusted-data resolver, so SendGrid/Calendar/LLM operations remain
-explicitly degraded (`PROVIDER_NOT_CONFIGURED` or equivalent) until that resolver is
-provided by a reviewed worker lane.
+for transport checks but must not be presented as the only outbox drain. The production
+runtime factory defaults to `PostgresTrustedDataResolver`, bound to the outbox store's
+PostgreSQL pool. SendGrid/Calendar/LLM operations therefore degrade only when required
+provider credentials are missing or trusted-reference resolution fails; those failures
+are fail-closed (`PROVIDER_NOT_CONFIGURED` or a normalized resolver error), while the
+durable row remains observable and the committed domain record is not rolled back.
 
 ## Pre-deploy gates
 

@@ -72,7 +72,7 @@ same database.
 | `HEALTHCARE_WORKER_OUTBOX_LEASE_SECONDS` | `120` | Claim lease/fencing window; expired processing rows are recoverable. |
 | `HEALTHCARE_WORKER_MAX_CONCURRENCY` | `10` | Bounded in-process provider attempt concurrency. |
 | `HEALTHCARE_WORKER_PROVIDER_TIMEOUT_SECONDS` | `10` | Timeout for external adapter calls. |
-| `HEALTHCARE_WORKER_SENDGRID_API_KEY` | blank | Blank or missing resolver credentials yield `PROVIDER_NOT_CONFIGURED`; appointments remain valid. |
+| `HEALTHCARE_WORKER_SENDGRID_API_KEY` | blank | Blank or missing provider credentials yield `PROVIDER_NOT_CONFIGURED`; appointments remain valid. |
 | `HEALTHCARE_WORKER_SENDGRID_FROM_EMAIL` | `notifications@example.invalid` | Must be a verified sender before sending. |
 | `HEALTHCARE_WORKER_SENDGRID_ENDPOINT` | SendGrid HTTPS endpoint | Keep HTTPS and use the reviewed provider endpoint. |
 | `HEALTHCARE_WORKER_GOOGLE_CLIENT_ID` | blank | OAuth client ID for the server-side Calendar adapter. |
@@ -90,9 +90,11 @@ same database.
 The Render worker command is
 `uv run python -m healthcare_worker --poller` from the `apps/worker` root. That package
 entrypoint calls the existing `build_outbox_poller` factory and claims PostgreSQL
-`outbox_events` directly. The current factory has no trusted-data resolver, so provider
-calls remain safely degraded even if credentials are present; that is an explicit
-limitation, not evidence that Celery drained the outbox.
+`outbox_events` directly. The production factory defaults to
+`PostgresTrustedDataResolver`, bound to the outbox store's PostgreSQL pool. Provider
+calls therefore degrade only when required provider credentials are missing or trusted-reference
+resolution fails; those failures do not roll back committed domain records or prove that
+Celery drained the outbox.
 
 ## Required combinations and local loading
 

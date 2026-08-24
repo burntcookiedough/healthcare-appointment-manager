@@ -79,13 +79,14 @@ After the final accepted commit is selected, create the archive from that commit
 
 ```text
 git archive --format=zip --prefix=healthcare-appointment-manager/ --output=healthcare-appointment-manager-source.zip HEAD
-tar -tf healthcare-appointment-manager-source.zip
-# or: unzip -l healthcare-appointment-manager-source.zip
+unzip -l healthcare-appointment-manager-source.zip
+# or, on any platform with Python:
+python -m zipfile -l healthcare-appointment-manager-source.zip
 ```
 
 Because `git archive` includes committed files only, it excludes Git metadata,
 ignored dependencies/caches/worktrees, local `.env` files, and untracked outputs.
-Before sharing, inspect the archive with `tar -tf healthcare-appointment-manager-source.zip`
-or `unzip -l healthcare-appointment-manager-source.zip`, then verify that the only
-tracked environment file is `.env.example` with placeholders. Do not add the generated
-zip to the repository.
+Before sharing, inspect the archive with `unzip -l healthcare-appointment-manager-source.zip`
+or `python -m zipfile -l healthcare-appointment-manager-source.zip`, then verify that the
+only tracked environment file is `.env.example` with placeholders. Do not add the
+generated zip to the repository.

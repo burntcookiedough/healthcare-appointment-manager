@@ -18,11 +18,12 @@ entrypoint calls `build_outbox_poller`, claims rows with `FOR UPDATE SKIP LOCKED
 leases, and persists retry/terminal state. Redis/Celery can transport task notifications
 but is not the only drain and is never the source of booking truth.
 
-In this source snapshot the runtime factory is intentionally called without a trusted
-database resolver. Consequently the network adapters fail closed with a normalized
-`PROVIDER_NOT_CONFIGURED`/credential outcome until a reviewed resolver is supplied.
-This is honest degraded behavior: the durable row remains observable and the committed
-domain record is not rolled back.
+The production runtime factory defaults to `PostgresTrustedDataResolver`, bound to the
+outbox store's PostgreSQL pool. Network adapters therefore fail closed only when required
+provider credentials are missing or trusted-reference resolution fails, returning
+`PROVIDER_NOT_CONFIGURED` or a normalized resolver error as appropriate. This is honest
+degraded behavior: the durable row remains observable and the committed domain record is
+not rolled back.
 
 ## Google Calendar OAuth 2.0
 
@@ -82,9 +83,10 @@ review:
 
 The adapter receives an opaque source reference, resolves the minimum necessary source
 text server-side, strips direct identifiers, requests structured output, validates it
-again, and records provenance. Blank endpoint/key or a missing resolver produces an
-explicit unavailable/failed derived-output state; it does not block booking, saving
-original notes, completing a visit, or scheduling from structured prescription fields.
+again, and records provenance. A blank endpoint/key or a trusted-reference resolution
+failure produces an explicit unavailable/failed derived-output state; it does not block
+booking, saving original notes, completing a visit, or scheduling from structured
+prescription fields.
 Generated output is advisory and labeled; it cannot diagnose, prescribe, overwrite
 source text, or create reminders. See [`LLM_PROMPTS.md`](LLM_PROMPTS.md) for prompt and
 schema version records.

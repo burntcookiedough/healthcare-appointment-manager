@@ -2,7 +2,9 @@
 
 Status: **versioned design record for the current worker ports/adapters**. The worker
 exposes a provider-neutral `ClinicalLLMPort`, deterministic fakes, and a network adapter
-that fails closed when its endpoint, credentials, or trusted resolver is absent.
+that fails closed when its required endpoint or provider credentials are missing or
+trusted-reference resolution fails. The production runtime factory defaults to
+`PostgresTrustedDataResolver`.
 `ClinicalSummaryRequest` carries a source-record reference, source version, and task
 kind; the adapter fetches authorized source text server-side. No prompt or clinical
 text belongs in the outbox envelope.
@@ -161,12 +163,12 @@ contract (additional properties are forbidden).
 }
 ```
 
-The application compares each `medication_review` item with the doctor-reviewed
-structured prescription by the `(prescription_item_id, prescription_version)` pair,
-not by array position or medication name. The pair must identify exactly one reviewed
-item; missing, duplicated, reordered, unknown, or field-mismatched items mark the
-generated artifact invalid. A mismatch never alters the prescription or reminder
-schedule.
+The application validates `medication_review` by building a key map keyed by the
+`(prescription_item_id, prescription_version)` pair, never by array position or
+medication name. Array order is irrelevant. The set of keys must match the doctor-reviewed
+structured prescription exactly: missing, duplicate, or unknown keys, and any field
+mismatch, reject the generated artifact. A mismatch never alters the prescription or
+reminder schedule.
 
 ## Version and prompt storage
 
