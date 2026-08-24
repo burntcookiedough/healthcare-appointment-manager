@@ -34,8 +34,9 @@ therefore changes only a projection status, never committed scheduling or clinic
   build `@healthcare-manager/web`.
 - [`render.yaml`](../render.yaml) declares a Python API service at `apps/api` and a
   worker at `apps/worker`. The worker start command is
-  `uv run python -m healthcare_worker --poll-outbox`, an assumption that the concurrent
-  worker lane must reconcile against its final package CLI before deployment.
+  `uv run python -m healthcare_worker --poller`. Both services pin Render's supported
+  `PYTHON_VERSION=3.13.7` and `UV_VERSION=0.11.13` environment controls and resolve
+  dependencies from their service-local `uv.lock`.
 - [`.env.example`](../.env.example) and [`ENVIRONMENT.md`](ENVIRONMENT.md) use exact API
   and `HEALTHCARE_WORKER_*` names. They contain placeholders only.
 - `compose.yaml` is local-only PostgreSQL 17 plus Redis 8-compatible infrastructure;
@@ -99,9 +100,10 @@ assumed.
    `HEALTHCARE_WORKER_SENDGRID_*`, `HEALTHCARE_WORKER_GOOGLE_*`, and
    `HEALTHCARE_WORKER_LLM_*` provider settings. Do not duplicate broad credentials
    between services; see [`ENVIRONMENT.md`](ENVIRONMENT.md) for the complete matrix.
-3. Build with each service's frozen `uv.lock`. Render supplies `$PORT` to the API start
-   command. The worker command must be the worker package's durable poller CLI, not only
-   `celery ... worker`.
+3. Build with each service's frozen `uv.lock`; the manifest pins Python and uv through
+   Render's supported `PYTHON_VERSION` and `UV_VERSION` environment controls. Render
+   supplies `$PORT` to the API start command. The worker command is
+   `uv run python -m healthcare_worker --poller`, not only `celery ... worker`.
 4. From a one-time release shell using the API environment, run
    `uv run alembic upgrade head` and record the revision plus backup/restore point. Never
    have every API/worker process run migrations at startup.
@@ -118,11 +120,10 @@ assumed.
 
 Railway can use the same roots and commands without the Blueprint:
 
-- API root `apps/api`; build `pip install uv && uv sync --locked --extra dev`; start
+- API root `apps/api`; build `pip install uv==0.11.13 && uv sync --locked --extra dev`; start
   `uv run uvicorn healthcare_api.main:app --host 0.0.0.0 --port $PORT`.
-- Worker root `apps/worker`; build `pip install uv && uv sync --locked`; start the
-  worker-package poller command from the current `render.yaml` assumption and reconcile
-  its option against the worker commit before release.
+- Worker root `apps/worker`; build `pip install uv==0.11.13 && uv sync --locked`; start
+  `uv run python -m healthcare_worker --poller`.
 - Attach isolated PostgreSQL 17 and Redis services; map the exact names in
   [`ENVIRONMENT.md`](ENVIRONMENT.md), including `HEALTHCARE_WORKER_DATABASE_URL`.
 - Run the migration once, configure private worker networking, and allow only the Vercel

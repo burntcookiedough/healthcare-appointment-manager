@@ -62,7 +62,8 @@ provider requests.
 
 Also verify, with available local tooling:
 
-- [ ] `render.yaml` parses as YAML and its service roots/commands match the lockfiles.
+- [ ] `render.yaml` parses as YAML, its service roots/commands match the lockfiles, its
+  worker uses `--poller`, and its supported `PYTHON_VERSION`/`UV_VERSION` pins are present.
 - [ ] `vercel.json` parses as JSON and its build command targets the web package.
 - [ ] CI uses Node 24, pnpm 11.23.0, Python 3.13, and frozen installs.
 - [ ] API health path and Render health check agree.

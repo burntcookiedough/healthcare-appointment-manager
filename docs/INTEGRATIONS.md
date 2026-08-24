@@ -13,11 +13,10 @@ The worker reads the exact `HEALTHCARE_WORKER_*` settings listed in
 
 The API writes `outbox_events` and `integration_operations` in the same PostgreSQL
 transaction as the domain mutation. Render/native deployments assume the worker lane
-provides `uv run python -m healthcare_worker --poll-outbox` from `apps/worker`; reconcile
-that option against the worker commit before deployment. The package entrypoint must
-call `build_outbox_poller`, claim rows with `FOR UPDATE SKIP LOCKED`, apply leases, and
-persist retry/terminal state. Redis/Celery can transport task notifications but is not
-the only drain and is never the source of booking truth.
+provides `uv run python -m healthcare_worker --poller` from `apps/worker`. The package
+entrypoint calls `build_outbox_poller`, claims rows with `FOR UPDATE SKIP LOCKED`, applies
+leases, and persists retry/terminal state. Redis/Celery can transport task notifications
+but is not the only drain and is never the source of booking truth.
 
 In this source snapshot the runtime factory is intentionally called without a trusted
 database resolver. Consequently the network adapters fail closed with a normalized
@@ -74,7 +73,7 @@ review:
 
 - `HEALTHCARE_WORKER_LLM_ENDPOINT`
 - `HEALTHCARE_WORKER_LLM_API_KEY`
-- `HEALTHCARE_WORKER_LLM_PROVIDER` (`openai`, `gemini`, or `generic`)
+- `HEALTHCARE_WORKER_LLM_PROVIDER` (`none`, `disabled`, `openai`, `gemini`, or `generic`)
 - `HEALTHCARE_WORKER_LLM_MODEL`
 - `HEALTHCARE_WORKER_LLM_PROMPT_VERSION`
 - `HEALTHCARE_WORKER_LLM_SCHEMA_VERSION`
@@ -89,6 +88,9 @@ original notes, completing a visit, or scheduling from structured prescription f
 Generated output is advisory and labeled; it cannot diagnose, prescribe, overwrite
 source text, or create reminders. See [`LLM_PROMPTS.md`](LLM_PROMPTS.md) for prompt and
 schema version records.
+
+Set `HEALTHCARE_WORKER_LLM_PROVIDER=none` or `disabled` to explicitly disable LLM work;
+the other provider values require their reviewed endpoint, model, and credentials.
 
 ## Operational checklist
 

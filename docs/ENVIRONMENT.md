@@ -6,6 +6,11 @@ Vercel/Render/Railway/Supabase/Redis secret stores; no credential or hosted URL 
 committed. The API reads the root `.env`. The worker uses only the explicit
 `HEALTHCARE_WORKER_*` names and does not implicitly load dotenv files.
 
+Render's native Python services pin the platform runtime in [`render.yaml`](../render.yaml)
+with the supported `PYTHON_VERSION=3.13.7` and `UV_VERSION=0.11.13` environment controls.
+These two variables select the hosted toolchain; they are not read by the API or worker
+settings and are intentionally not part of the local `.env.example` application matrix.
+
 ## Web variables
 
 | Variable | Consumer | Local value | Hosted/degraded behavior |
@@ -53,7 +58,7 @@ same database.
 | --- | --- | --- |
 | `HEALTHCARE_WORKER_SERVICE_NAME` | `healthcare-worker` | Stable service/metric label. |
 | `HEALTHCARE_WORKER_ENVIRONMENT` | `development` | `production` on Render/Railway. |
-| `HEALTHCARE_WORKER_DATABASE_URL` | `postgresql://healthcare:healthcare@localhost:5432/healthcare` | Required by the worker-package `--poll-outbox` entrypoint; private server-only URL. |
+| `HEALTHCARE_WORKER_DATABASE_URL` | `postgresql://healthcare:healthcare@localhost:5432/healthcare` | Required by the worker-package `--poller` entrypoint; private server-only URL. |
 | `HEALTHCARE_WORKER_BROKER_URL` | `redis://localhost:6379/0` | Celery transport only; Redis is never business-state authority. |
 | `HEALTHCARE_WORKER_RESULT_BACKEND_URL` | `redis://localhost:6379/1` | Optional result transport; durable outcome remains PostgreSQL. |
 | `HEALTHCARE_WORKER_EVENT_VERSION` | `1` | Reject unsupported event envelopes terminally. |
@@ -76,19 +81,18 @@ same database.
 | `HEALTHCARE_WORKER_GOOGLE_CALENDAR_ENDPOINT` | Google Calendar API endpoint | Keep HTTPS; Calendar is only a projection. |
 | `HEALTHCARE_WORKER_LLM_ENDPOINT` | blank | Blank disables network generation and leaves derived artifacts pending/failed. |
 | `HEALTHCARE_WORKER_LLM_API_KEY` | blank | Server-only provider key. |
-| `HEALTHCARE_WORKER_LLM_PROVIDER` | `generic` | Allowed values are `openai`, `gemini`, or `generic`; no `none` value is accepted by the worker settings. |
+| `HEALTHCARE_WORKER_LLM_PROVIDER` | `generic` | Allowed values are `none`, `disabled`, `openai`, `gemini`, or `generic`; `none`/`disabled` explicitly turn off LLM work. |
 | `HEALTHCARE_WORKER_LLM_MODEL` | blank | Configure only after privacy/model review. |
 | `HEALTHCARE_WORKER_LLM_PROMPT_VERSION` | `clinical.v1` | Persist/version any generated artifact provenance. |
 | `HEALTHCARE_WORKER_LLM_SCHEMA_VERSION` | `clinical.v1` | Validate structured output against the reviewed schema. |
 | `HEALTHCARE_WORKER_LLM_VALIDATION_RETRIES` | `2` | Bounded schema-validation retries. |
 
-The Render command assumes the worker lane exposes
-`uv run python -m healthcare_worker --poll-outbox` from the `apps/worker` root. That
-package entrypoint must call the existing `build_outbox_poller` factory and claim
-PostgreSQL `outbox_events` directly. Reconcile the option name and startup behavior
-against the worker commit before deployment. The current factory has no trusted-data
-resolver, so provider calls remain safely degraded even if credentials are present;
-that is an explicit limitation, not evidence that Celery drained the outbox.
+The Render worker command is
+`uv run python -m healthcare_worker --poller` from the `apps/worker` root. That package
+entrypoint calls the existing `build_outbox_poller` factory and claims PostgreSQL
+`outbox_events` directly. The current factory has no trusted-data resolver, so provider
+calls remain safely degraded even if credentials are present; that is an explicit
+limitation, not evidence that Celery drained the outbox.
 
 ## Required combinations and local loading
 

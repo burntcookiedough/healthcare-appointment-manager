@@ -192,17 +192,19 @@ uv run celery -A healthcare_worker.celery_app:celery_app worker --loglevel=INFO
 ```
 
 The durable poller is the process that drains committed PostgreSQL `outbox_events`.
-The Render/native manifest assumes the worker lane exposes this package command:
+Run the worker package's `--poller` entrypoint after exporting the variables in
+[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md):
 
 ```text
 cd apps/worker
-uv run python -m healthcare_worker --poll-outbox
+uv run python -m healthcare_worker --poller
 ```
 
-Reconcile the option name against the concurrent worker commit before deployment. The
-Celery process above is an optional transport/task boundary, not the sole outbox drain.
-Provider adapters fail closed when credentials or the trusted data resolver are absent;
-that degraded state never invalidates a committed appointment or overwrites source text.
+The `--poller-dry-run` option validates process wiring without opening PostgreSQL or
+contacting a provider. The Celery process above is an optional transport/task boundary,
+not the sole outbox drain. Provider adapters fail closed when credentials or the trusted
+data resolver are absent; that degraded state never invalidates a committed appointment
+or overwrites source text.
 
 ## Tests and checks
 
