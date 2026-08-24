@@ -66,9 +66,12 @@ export default function DoctorVisitEditorPage() {
   const [prescriptionItems, setPrescriptionItems] = React.useState<PrescriptionItem[]>([]);
   const [isFinalizeDialogOpen, setIsFinalizeDialogOpen] = React.useState(false);
 
-  // Sync state when visit data loads
+  const initializedVisitIdRef = React.useRef<string | null>(null);
+
+  // Sync state when visit data loads (only on first load or visit ID change to protect unsaved edits)
   React.useEffect(() => {
-    if (visit) {
+    if (visit && initializedVisitIdRef.current !== visit.id) {
+      initializedVisitIdRef.current = visit.id;
       setNotes(visit.doctor_notes || "");
       setDiagnosis(visit.diagnosis || "");
       setFollowUp(visit.follow_up_instructions || "");
@@ -99,6 +102,33 @@ export default function DoctorVisitEditorPage() {
     setPrescriptionItems(
       prescriptionItems.map((item) => (item.id === id ? { ...item, [field]: val } : item))
     );
+  };
+
+  const handleOpenFinalize = () => {
+    if (!diagnosis || diagnosis.trim().length === 0) {
+      toast.error("Please enter a clinical diagnosis before finalizing.");
+      return;
+    }
+    if (!notes || notes.trim().length === 0) {
+      toast.error("Please enter consultation notes before finalizing.");
+      return;
+    }
+    for (let i = 0; i < prescriptionItems.length; i++) {
+      const item = prescriptionItems[i];
+      if (!item.medication_name || item.medication_name.trim().length === 0) {
+        toast.error(`Medication #${i + 1}: Name is required.`);
+        return;
+      }
+      if (!item.dosage || item.dosage.trim().length === 0) {
+        toast.error(`Medication #${i + 1}: Dosage is required.`);
+        return;
+      }
+      if (item.duration_days === undefined || item.duration_days === null || item.duration_days <= 0) {
+        toast.error(`Medication #${i + 1}: Duration must be a positive number of days.`);
+        return;
+      }
+    }
+    setIsFinalizeDialogOpen(true);
   };
 
   // Draft Save Mutation
@@ -175,7 +205,7 @@ export default function DoctorVisitEditorPage() {
             <Button
               variant="primary"
               size="default"
-              onClick={() => setIsFinalizeDialogOpen(true)}
+              onClick={handleOpenFinalize}
             >
               <CheckCircle2 className="h-4 w-4 text-[#efff72]" />
               <span>Finalize & Complete Visit</span>
@@ -319,11 +349,13 @@ export default function DoctorVisitEditorPage() {
                   <Input
                     label="Duration (Days)"
                     type="number"
-                    value={item.duration_days || 7}
+                    min={1}
+                    value={item.duration_days !== undefined && item.duration_days !== null ? item.duration_days : ""}
                     disabled={isCompleted}
-                    onChange={(e) =>
-                      handleItemChange(item.id, "duration_days", Number(e.target.value))
-                    }
+                    onChange={(e) => {
+                      const val = e.target.value === "" ? 0 : Number(e.target.value);
+                      handleItemChange(item.id, "duration_days", val);
+                    }}
                   />
 
                   <Input

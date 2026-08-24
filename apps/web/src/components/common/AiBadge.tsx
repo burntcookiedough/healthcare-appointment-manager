@@ -44,7 +44,7 @@ export function AiBadge({
             iconBoxClass
           )}
         >
-          <Icon className={cn("h-3 w-3", status === "pending" && "animate-spin")} aria-hidden="true" />
+          <Icon className={cn("h-3 w-3", status === "pending" && "animate-spin motion-reduce:animate-none")} aria-hidden="true" />
         </div>
         <div className="flex items-center gap-1.5 text-xs">
           <span className={cn("font-bold tracking-tight", textColor)}>{label}</span>

@@ -18,6 +18,20 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+interface ChannelConfig {
+  key: "email" | "calendar" | "llm" | "reminder";
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  subtitle: string;
+}
+
+const CHANNELS: ChannelConfig[] = [
+  { key: "email", label: "SendGrid Email", icon: Mail, subtitle: "Confirmation notifications" },
+  { key: "calendar", label: "Google Calendar", icon: Calendar, subtitle: "Doctor/patient sync" },
+  { key: "llm", label: "LLM Summary Adapter", icon: Sparkles, subtitle: "Pre-visit intake synthesis" },
+  { key: "reminder", label: "Reminders Channel", icon: Pill, subtitle: "Deterministic SMS dispatcher" },
+];
+
 export default function AdminIntegrationsPage() {
   const queryClient = useQueryClient();
 
@@ -40,7 +54,46 @@ export default function AdminIntegrationsPage() {
     },
   });
 
-  const items = integrations || [];
+  const items = React.useMemo(() => integrations || [], [integrations]);
+
+  const channelHealth = React.useMemo(() => {
+    return CHANNELS.map((ch) => {
+      const channelItems = items.filter((i) => i.channel === ch.key);
+      const hasFailed = channelItems.some((i) => i.state === "failed");
+      const hasRetrying = channelItems.some((i) => i.state === "retrying");
+
+      let status = "Operational";
+      let statusClass = "text-[#111111]";
+      let dotClass = "bg-[#26734d]";
+      let detail: string = ch.subtitle;
+
+      if (hasFailed) {
+        const count = channelItems.filter((i) => i.state === "failed").length;
+        status = "Degraded";
+        statusClass = "text-[#b42318]";
+        dotClass = "bg-[#b42318] animate-pulse motion-reduce:animate-none";
+        detail = `${count} failed sync(s) requiring retry`;
+      } else if (hasRetrying) {
+        status = "Retrying";
+        statusClass = "text-[#b54708]";
+        dotClass = "bg-[#b54708]";
+        detail = "Exponential backoff in progress";
+      } else {
+        status = "Healthy";
+        statusClass = "text-[#111111]";
+        dotClass = "bg-[#26734d]";
+        detail = channelItems.length > 0 ? "Delivery confirmed" : ch.subtitle;
+      }
+
+      return {
+        ...ch,
+        status,
+        statusClass,
+        dotClass,
+        detail,
+      };
+    });
+  }, [items]);
 
   return (
     <div className="space-y-8">
@@ -58,53 +111,24 @@ export default function AdminIntegrationsPage() {
 
       {/* Channel Health Overview Strip */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-        <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 space-y-2 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[#8e8e89]">SendGrid Email</span>
-            <Mail className="h-4 w-4 text-[#26734d]" />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl font-black text-[#111111]">Healthy</span>
-            <span className="h-2 w-2 rounded-full bg-[#26734d]" />
-          </div>
-          <span className="text-[11px] text-[#626262]">Confirmation notifications</span>
-        </div>
-
-        <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 space-y-2 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[#8e8e89]">Google Calendar</span>
-            <Calendar className="h-4 w-4 text-[#b42318]" />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl font-black text-[#b42318]">Degraded</span>
-            <span className="h-2 w-2 rounded-full bg-[#b42318] animate-pulse" />
-          </div>
-          <span className="text-[11px] text-[#b42318]">1 failed sync requiring retry</span>
-        </div>
-
-        <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 space-y-2 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[#8e8e89]">LLM Summary Adapter</span>
-            <Sparkles className="h-4 w-4 text-[#efff72] fill-[#efff72]" />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl font-black text-[#111111]">Operational</span>
-            <span className="h-2 w-2 rounded-full bg-[#26734d]" />
-          </div>
-          <span className="text-[11px] text-[#626262]">Pre-visit intake synthesis</span>
-        </div>
-
-        <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 space-y-2 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[#8e8e89]">Reminders Channel</span>
-            <Pill className="h-4 w-4 text-[#b54708]" />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl font-black text-[#b54708]">Backoff Retrying</span>
-            <span className="h-2 w-2 rounded-full bg-[#b54708]" />
-          </div>
-          <span className="text-[11px] text-[#626262]">Deterministic SMS dispatcher</span>
-        </div>
+        {channelHealth.map((ch) => {
+          const Icon = ch.icon;
+          return (
+            <div key={ch.key} className="rounded-2xl border border-[#e7e7e2] bg-white p-5 space-y-2 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-[#8e8e89]">{ch.label}</span>
+                <Icon className="h-4 w-4 text-[#8e8e89]" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-2xl font-black ${ch.statusClass}`}>{ch.status}</span>
+                <span className={`h-2 w-2 rounded-full ${ch.dotClass}`} />
+              </div>
+              <span className={`text-[11px] ${ch.status === "Degraded" ? "text-[#b42318]" : "text-[#626262]"}`}>
+                {ch.detail}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Outbox Event Table with Manual Retry */}

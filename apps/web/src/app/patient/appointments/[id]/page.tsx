@@ -18,7 +18,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/Dialog";
-import { formatDate, formatTime, formatDateTime, formatSlotRange, addDays } from "@/lib/dates";
+import { formatDate, formatTime, formatDateTime, formatDateOnly, formatSlotRange, addDays } from "@/lib/dates";
 import {
   Stethoscope,
   ArrowLeft,
@@ -57,7 +57,7 @@ export default function PatientAppointmentDetailPage() {
 
   // Query availability for rescheduling
   const { data: rescheduleSlots, isLoading: isReschedSlotsLoading } = useQuery({
-    queryKey: ["reschedule-slots", appointment?.doctor_id, rescheduleDate.toISOString().split("T")[0]],
+    queryKey: ["reschedule-slots", appointment?.doctor_id, formatDateOnly(rescheduleDate, "Asia/Kolkata")],
     queryFn: () =>
       appointment
         ? apiClient.getDoctorAvailability(appointment.doctor_id, rescheduleDate, 30)
@@ -73,6 +73,13 @@ export default function PatientAppointmentDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["appointment-detail", appointmentId] });
       queryClient.invalidateQueries({ queryKey: ["patient-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["doctor-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["doctor-timeline"] });
+      queryClient.invalidateQueries({ queryKey: ["doctor-appointment-workspace", appointmentId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-all-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["booking-slots"] });
+      queryClient.invalidateQueries({ queryKey: ["reschedule-slots"] });
       setIsCancelDialogOpen(false);
       toast.success("Appointment successfully cancelled.");
     },
@@ -90,6 +97,13 @@ export default function PatientAppointmentDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["appointment-detail", appointmentId] });
       queryClient.invalidateQueries({ queryKey: ["patient-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["doctor-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["doctor-timeline"] });
+      queryClient.invalidateQueries({ queryKey: ["doctor-appointment-workspace", appointmentId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-all-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["booking-slots"] });
+      queryClient.invalidateQueries({ queryKey: ["reschedule-slots"] });
       setIsRescheduleDialogOpen(false);
       toast.success("Appointment successfully rescheduled.");
     },
@@ -322,7 +336,7 @@ export default function PatientAppointmentDetailPage() {
                 {[1, 2, 3, 4, 5].map((offset) => {
                   const d = addDays(new Date(), offset);
                   const isSel =
-                    rescheduleDate.toISOString().split("T")[0] === d.toISOString().split("T")[0];
+                    formatDateOnly(rescheduleDate, "Asia/Kolkata") === formatDateOnly(d, "Asia/Kolkata");
                   return (
                     <button
                       key={offset}
@@ -331,6 +345,8 @@ export default function PatientAppointmentDetailPage() {
                         setRescheduleDate(d);
                         setRescheduleSlot(null);
                       }}
+                      aria-pressed={isSel}
+                      aria-label={`Select date: ${formatDate(d, "EEE, d MMM")}`}
                       className={`min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-semibold border transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                         isSel
                           ? "bg-[#111111] text-white border-[#111111]"
@@ -365,6 +381,8 @@ export default function PatientAppointmentDetailPage() {
                           key={idx}
                           type="button"
                           onClick={() => setRescheduleSlot(s.starts_at)}
+                          aria-pressed={isChosen}
+                          aria-label={`Slot ${formatSlotRange(s.starts_at, s.ends_at)}`}
                           className={`min-h-[44px] p-2.5 rounded-xl text-xs font-bold border text-center transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                             isChosen
                               ? "bg-[#efff72] text-[#111111] border-[#d6ea39]"

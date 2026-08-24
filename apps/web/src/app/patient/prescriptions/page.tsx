@@ -5,13 +5,17 @@ import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { EmptyState } from "@/components/common/EmptyState";
 import { CardSkeleton } from "@/components/common/Skeleton";
+import { useAuth } from "@/features/auth/auth-context";
 import { Pill, Clock, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function PatientPrescriptionsPage() {
+  const { user } = useAuth();
+  const patientId = user?.profile_id || "pat-001-aarav";
+
   const { data: reminders, isLoading } = useQuery({
-    queryKey: ["patient-prescriptions-reminders"],
-    queryFn: () => apiClient.getPatientReminders("pat-001-aarav"),
+    queryKey: ["patient-prescriptions-reminders", patientId],
+    queryFn: () => apiClient.getPatientReminders(patientId),
   });
 
   const [takenMap, setTakenMap] = React.useState<Record<string, boolean>>({});

@@ -1,6 +1,7 @@
 import {
   DoctorDetail,
   DoctorSummary,
+  DoctorCreateRequest,
   PatientProfile,
   AppointmentSummary,
   AppointmentDetail,
@@ -20,6 +21,7 @@ import {
   UserContext,
   UserRole,
 } from "@/types/api";
+import { formatDateOnly } from "@/lib/dates";
 import {
   MOCK_PATIENT,
   MOCK_DOCTORS,
@@ -197,6 +199,34 @@ class MockDatabase {
     return { ...doc };
   }
 
+  public async createDoctor(req: DoctorCreateRequest): Promise<DoctorDetail> {
+    await this.simulateNetwork();
+    const newDoc: DoctorDetail = {
+      id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      name: req.name,
+      credentials: req.credentials,
+      specialization: req.specialization,
+      experience_years: req.experience_years ?? 5,
+      consultation_fee: req.consultation_fee ?? 1000,
+      biography: req.biography || `${req.name} is a verified medical specialist in ${req.specialization}.`,
+      languages: req.languages || ["English", "Hindi"],
+      accepted_durations: req.accepted_durations || [15, 30, 45],
+      time_zone: req.time_zone || "Asia/Kolkata",
+      is_active: true,
+      schedule_version: 1,
+      next_available_at: new Date().toISOString(),
+      working_hours: req.working_hours || [
+        { day_of_week: 1, start_time: "09:00", end_time: "17:00", slot_duration_minutes: 30 },
+        { day_of_week: 2, start_time: "09:00", end_time: "17:00", slot_duration_minutes: 30 },
+        { day_of_week: 3, start_time: "09:00", end_time: "17:00", slot_duration_minutes: 30 },
+        { day_of_week: 4, start_time: "09:00", end_time: "17:00", slot_duration_minutes: 30 },
+        { day_of_week: 5, start_time: "09:00", end_time: "17:00", slot_duration_minutes: 30 },
+      ],
+    };
+    this.doctors.push(newDoc);
+    return { ...newDoc };
+  }
+
   // Doctor Availability Slots
   public async getDoctorAvailability(
     doctorId: string,
@@ -207,7 +237,11 @@ class MockDatabase {
     const doc = this.doctors.find((d) => d.id === doctorId);
     if (!doc) return [];
 
-    const dayOfWeek = targetDate.getDay();
+    const dateStr = formatDateOnly(targetDate, "Asia/Kolkata");
+    // Determine day of week in Asia/Kolkata
+    const targetDateInKolkata = new Date(`${dateStr}T12:00:00+05:30`);
+    const dayOfWeek = targetDateInKolkata.getDay();
+
     const rule = doc.working_hours.find((r) => r.day_of_week === dayOfWeek);
     if (!rule) return [];
 
@@ -215,13 +249,17 @@ class MockDatabase {
     const [endH, endM] = rule.end_time.split(":").map(Number);
 
     const slots: AvailabilitySlot[] = [];
-    const dateStr = targetDate.toISOString().split("T")[0];
 
     // Check existing doctor leaves
     const doctorLeaves = this.leaves.filter((l) => l.doctor_id === doctorId);
 
-    let currentSlotStart = new Date(`${dateStr}T${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}:00.000Z`);
-    const dayEnd = new Date(`${dateStr}T${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}:00.000Z`);
+    // Resolve local working hour rule in Asia/Kolkata (+05:30 wall-clock)
+    let currentSlotStart = new Date(
+      `${dateStr}T${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}:00+05:30`
+    );
+    const dayEnd = new Date(
+      `${dateStr}T${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}:00+05:30`
+    );
 
     while (currentSlotStart < dayEnd) {
       const slotEnd = new Date(currentSlotStart.getTime() + durationMinutes * 60 * 1000);

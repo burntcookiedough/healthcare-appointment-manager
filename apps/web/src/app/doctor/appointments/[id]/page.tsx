@@ -85,9 +85,13 @@ export default function DoctorAppointmentWorkspacePage() {
                 <h1 className="text-2xl font-black text-[#171815]">
                   {appointment.patient_name}
                 </h1>
-                <span className="text-sm font-semibold text-[#666861]">
-                  ({appointment.patient_age || 34} yrs • {appointment.patient_gender || "Male"})
-                </span>
+                {(appointment.patient_age !== undefined && appointment.patient_age !== null) || appointment.patient_gender ? (
+                  <span className="text-sm font-semibold text-[#666861]">
+                    ({appointment.patient_age !== undefined && appointment.patient_age !== null ? `${appointment.patient_age} yrs` : "Age not provided"} • {appointment.patient_gender || "Gender not specified"})
+                  </span>
+                ) : (
+                  <span className="text-sm font-semibold text-[#666861]">(Demographics not provided)</span>
+                )}
                 <StatusBadge status={appointment.status} size="sm" />
                 <UrgencyBadge urgency={appointment.urgency} />
               </div>
@@ -201,7 +205,7 @@ export default function DoctorAppointmentWorkspacePage() {
               </div>
             ) : appointment.ai_brief_status === "pending" ? (
               <div className="py-8 text-center text-xs text-[#666861] space-y-2">
-                <div className="h-6 w-6 border-2 border-[#38556B] border-t-transparent rounded-full animate-spin mx-auto" />
+                <div className="h-6 w-6 border-2 border-[#38556B] border-t-transparent rounded-full animate-spin motion-reduce:animate-none mx-auto" />
                 <p>Synthesizing patient symptom intake…</p>
               </div>
             ) : (

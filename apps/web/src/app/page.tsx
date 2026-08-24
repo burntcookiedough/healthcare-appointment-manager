@@ -55,11 +55,17 @@ export default function LandingPage() {
 
             {/* CTA Buttons */}
             <div className="flex flex-wrap items-center gap-3 pt-2">
-              <Button asChild variant="primary" size="lg" className="px-6 text-sm font-semibold">
-                <Link href="/patient/book">
-                  <span>Book an Appointment</span>
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
+              <Button
+                variant="primary"
+                size="lg"
+                className="px-6 text-sm font-semibold"
+                onClick={() => {
+                  setRole("patient");
+                  router.push("/patient/book");
+                }}
+              >
+                <span>Book an Appointment</span>
+                <ArrowRight className="h-4 w-4" />
               </Button>
 
               <Button asChild variant="outline" size="lg" className="px-6 text-sm font-semibold">

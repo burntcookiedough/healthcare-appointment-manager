@@ -16,7 +16,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/Dialog";
-import { formatDateTime, addDays } from "@/lib/dates";
+import { formatDateTime, parseLocalISTToUTCISO, addDays } from "@/lib/dates";
 import { LeavePreviewResponse } from "@/types/api";
 import {
   CalendarOff,
@@ -60,8 +60,8 @@ export default function AdminLeavePage() {
   // Mutation 1: Fetch Impact Preview (LEAVE-002)
   const previewMutation = useMutation({
     mutationFn: async () => {
-      const startsAtISO = new Date(startDateStr).toISOString();
-      const endsAtISO = new Date(endDateStr).toISOString();
+      const startsAtISO = parseLocalISTToUTCISO(startDateStr);
+      const endsAtISO = parseLocalISTToUTCISO(endDateStr);
       return apiClient.previewDoctorLeave(selectedDoctorId, {
         starts_at: startsAtISO,
         ends_at: endsAtISO,
@@ -100,11 +100,22 @@ export default function AdminLeavePage() {
       setIsPreviewDialogOpen(false);
       setPreviewResult(null);
       queryClient.invalidateQueries({ queryKey: ["admin-all-leaves"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-all-appointments"] });
       queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
       queryClient.invalidateQueries({ queryKey: ["patient-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["doctor-appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["doctor-leaves"] });
+      queryClient.invalidateQueries({ queryKey: ["booking-slots"] });
+      queryClient.invalidateQueries({ queryKey: ["reschedule-slots"] });
     },
-    onError: (err: { error?: { message?: string } }) => {
-      toast.error(err?.error?.message || "Failed to commit doctor leave.");
+    onError: (err: { error?: { message?: string; code?: string } }) => {
+      if (err?.error?.code === "LEAVE_PREVIEW_STALE") {
+        toast.error("Leave preview is stale due to a schedule update. Please generate a fresh preview.");
+        setIsPreviewDialogOpen(false);
+        setIsScheduleLeaveOpen(true);
+      } else {
+        toast.error(err?.error?.message || "Failed to commit doctor leave.");
+      }
     },
   });
 

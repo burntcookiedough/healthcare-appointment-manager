@@ -85,6 +85,7 @@ export function Navbar() {
                   <Link
                     key={link.href}
                     href={link.href}
+                    aria-current={isActive ? "page" : undefined}
                     className={cn(
                       "inline-flex min-h-[44px] items-center rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors duration-150",
                       isActive

@@ -106,7 +106,7 @@ export function StatusBadge({ status, size = "default", className }: StatusBadge
         className
       )}
     >
-      <Icon className={cn(size === "sm" ? "h-3 w-3" : "h-3.5 w-3.5", status === "retrying" && "animate-spin")} aria-hidden="true" />
+      <Icon className={cn(size === "sm" ? "h-3 w-3" : "h-3.5 w-3.5", status === "retrying" && "animate-spin motion-reduce:animate-none")} aria-hidden="true" />
       <span>{label}</span>
     </span>
   );

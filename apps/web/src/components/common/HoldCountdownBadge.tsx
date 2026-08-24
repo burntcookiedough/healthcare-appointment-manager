@@ -19,17 +19,24 @@ export function HoldCountdownBadge({ expiresAt, onExpire, className }: HoldCount
   const [isExpired, setIsExpired] = React.useState<boolean>(() => getSecondsRemaining(expiresAt) <= 0);
   const onExpireRef = React.useRef(onExpire);
   onExpireRef.current = onExpire;
+  const hasFiredExpireRef = React.useRef(false);
 
   React.useEffect(() => {
-    // Immediate calculation
     const initial = getSecondsRemaining(expiresAt);
     setSecondsRemaining(initial);
 
     if (initial <= 0) {
       setIsExpired(true);
-      onExpireRef.current?.();
+      if (!hasFiredExpireRef.current) {
+        hasFiredExpireRef.current = true;
+        onExpireRef.current?.();
+      }
       return;
     }
+
+    // Reset expired state when expires_at changes to a future instant
+    setIsExpired(false);
+    hasFiredExpireRef.current = false;
 
     const intervalId = setInterval(() => {
       const remaining = getSecondsRemaining(expiresAt);
@@ -38,8 +45,11 @@ export function HoldCountdownBadge({ expiresAt, onExpire, className }: HoldCount
       if (remaining <= 0) {
         setIsExpired(true);
         clearInterval(intervalId);
-        announceToScreenReader("Your reserved slot hold has expired. Please select a slot again.", "assertive");
-        onExpireRef.current?.();
+        if (!hasFiredExpireRef.current) {
+          hasFiredExpireRef.current = true;
+          announceToScreenReader("Your reserved slot hold has expired. Please select a slot again.", "assertive");
+          onExpireRef.current?.();
+        }
       } else if (remaining === 60) {
         announceToScreenReader("One minute remaining to complete your booking hold.", "polite");
       }
@@ -53,7 +63,10 @@ export function HoldCountdownBadge({ expiresAt, onExpire, className }: HoldCount
         if (fresh <= 0) {
           setIsExpired(true);
           clearInterval(intervalId);
-          onExpireRef.current?.();
+          if (!hasFiredExpireRef.current) {
+            hasFiredExpireRef.current = true;
+            onExpireRef.current?.();
+          }
         }
       }
     };

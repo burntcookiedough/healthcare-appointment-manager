@@ -6,19 +6,23 @@ import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { CardSkeleton } from "@/components/common/Skeleton";
 import { formatDateTime } from "@/lib/dates";
+import { useAuth } from "@/features/auth/auth-context";
 import { Clock, ArrowLeft } from "lucide-react";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export default function DoctorSchedulePage() {
+  const { user } = useAuth();
+  const doctorId = user?.profile_id || "doc-001-rajesh";
+
   const { data: doctor, isLoading: isDocLoading } = useQuery({
-    queryKey: ["doctor-detail-schedule", "doc-001-rajesh"],
-    queryFn: () => apiClient.getDoctorDetail("doc-001-rajesh"),
+    queryKey: ["doctor-detail-schedule", doctorId],
+    queryFn: () => apiClient.getDoctorDetail(doctorId),
   });
 
   const { data: leaves, isLoading: isLeavesLoading } = useQuery({
-    queryKey: ["doctor-leaves", "doc-001-rajesh"],
-    queryFn: () => apiClient.getDoctorLeaves("doc-001-rajesh"),
+    queryKey: ["doctor-leaves", doctorId],
+    queryFn: () => apiClient.getDoctorLeaves(doctorId),
   });
 
   if (isDocLoading || isLeavesLoading) return <CardSkeleton />;

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -27,6 +27,7 @@ import {
 import { toast } from "sonner";
 
 export default function AdminDoctorsPage() {
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = React.useState("");
   const [isAddDoctorOpen, setIsAddDoctorOpen] = React.useState(false);
 
@@ -41,17 +42,40 @@ export default function AdminDoctorsPage() {
     queryFn: () => apiClient.getDoctors(searchQuery),
   });
 
+  const addDoctorMutation = useMutation({
+    mutationFn: async () => {
+      return apiClient.createDoctor({
+        name: docName,
+        specialization: docSpec,
+        credentials: docCreds || "MBBS, MD",
+        consultation_fee: Number(docFee) || 1000,
+        experience_years: 5,
+        time_zone: "Asia/Kolkata",
+      });
+    },
+    onSuccess: (newDoc) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-doctors-list"] });
+      queryClient.invalidateQueries({ queryKey: ["doctors-list"] });
+      queryClient.invalidateQueries({ queryKey: ["booking-doctors"] });
+      toast.success(`Doctor profile provisioned: ${newDoc.name}`);
+      setIsAddDoctorOpen(false);
+      setDocName("");
+      setDocSpec("");
+      setDocCreds("");
+      setDocFee("1000");
+    },
+    onError: (err: { error?: { message?: string } }) => {
+      toast.error(err?.error?.message || "Failed to provision doctor profile.");
+    },
+  });
+
   const handleAddDoctor = (e: React.FormEvent) => {
     e.preventDefault();
     if (!docName || !docSpec) {
       toast.error("Please fill in doctor name and specialization.");
       return;
     }
-    toast.success(`Doctor profile provisioned: ${docName}`);
-    setIsAddDoctorOpen(false);
-    setDocName("");
-    setDocSpec("");
-    setDocCreds("");
+    addDoctorMutation.mutate();
   };
 
   return (
@@ -196,10 +220,10 @@ export default function AdminDoctorsPage() {
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsAddDoctorOpen(false)}>
+              <Button type="button" variant="outline" onClick={() => setIsAddDoctorOpen(false)} disabled={addDoctorMutation.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" variant="primary">
+              <Button type="submit" variant="primary" isLoading={addDoctorMutation.isPending} disabled={addDoctorMutation.isPending}>
                 Provision Doctor
               </Button>
             </DialogFooter>

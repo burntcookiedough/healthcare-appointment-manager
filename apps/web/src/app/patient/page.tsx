@@ -19,16 +19,20 @@ import {
   FileText,
   AlertCircle,
 } from "lucide-react";
+import { useAuth } from "@/features/auth/auth-context";
 import { toast } from "sonner";
 
 export default function PatientDashboard() {
+  const { user } = useAuth();
+  const patientId = user?.profile_id || "pat-001-aarav";
+
   // Query appointments
   const {
     data: appointments,
     isLoading: isApptsLoading,
     error: apptsError,
   } = useQuery({
-    queryKey: ["patient-appointments"],
+    queryKey: ["patient-appointments", patientId],
     queryFn: () => apiClient.getAppointments("patient"),
   });
 
@@ -37,8 +41,8 @@ export default function PatientDashboard() {
     data: reminders,
     isLoading: isRemindersLoading,
   } = useQuery({
-    queryKey: ["patient-reminders"],
-    queryFn: () => apiClient.getPatientReminders("pat-001-aarav"),
+    queryKey: ["patient-reminders", patientId],
+    queryFn: () => apiClient.getPatientReminders(patientId),
   });
 
   const [takenDoses, setTakenDoses] = React.useState<Record<string, boolean>>({});
@@ -78,7 +82,7 @@ export default function PatientDashboard() {
           Patient Care Dashboard
         </h1>
         <p className="text-xs sm:text-sm text-[#626262] mt-1">
-          Welcome back, Aarav. View your upcoming consultations, today&apos;s medication schedule, and care history.
+          Welcome back, {user?.display_name || "Aarav"}. View your upcoming consultations, today&apos;s medication schedule, and care history.
         </p>
       </div>
       {/* 1. Upcoming Appointment Hero Banner */}

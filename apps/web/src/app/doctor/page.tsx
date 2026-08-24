@@ -10,7 +10,8 @@ import { UrgencyBadge } from "@/components/common/UrgencyBadge";
 import { AiBadge } from "@/components/common/AiBadge";
 import { EmptyState } from "@/components/common/EmptyState";
 import { CardSkeleton } from "@/components/common/Skeleton";
-import { formatTime, formatDate } from "@/lib/dates";
+import { formatTime, formatDate, isTodayInTimezone } from "@/lib/dates";
+import { useAuth } from "@/features/auth/auth-context";
 import {
   Calendar,
   ArrowRight,
@@ -18,12 +19,17 @@ import {
 } from "lucide-react";
 
 export default function DoctorTimelinePage() {
+  const { user } = useAuth();
   const { data: appointments, isLoading, error } = useQuery({
-    queryKey: ["doctor-appointments"],
+    queryKey: ["doctor-appointments", user?.profile_id],
     queryFn: () => apiClient.getAppointments("doctor"),
   });
 
-  const todayAppointments = appointments || [];
+  const todayAppointments = React.useMemo(() => {
+    if (!appointments) return [];
+    return appointments.filter((a) => isTodayInTimezone(a.starts_at, "Asia/Kolkata"));
+  }, [appointments]);
+
   const confirmedCount = todayAppointments.filter((a) => a.status === "confirmed").length;
   const inProgressCount = todayAppointments.filter((a) => a.status === "in_progress").length;
   const completedCount = todayAppointments.filter((a) => a.status === "completed").length;
@@ -48,7 +54,7 @@ export default function DoctorTimelinePage() {
           Today&apos;s Clinical Timeline
         </h1>
         <p className="text-xs sm:text-sm text-[#626262] mt-1">
-          {formatDate(new Date(), "EEEE, MMMM d, yyyy")} • Dr. Rajesh Verma (Cardiology)
+          {formatDate(new Date(), "EEEE, MMMM d, yyyy")} • {user?.display_name || "Doctor"}
         </p>
       </div>
 
@@ -115,10 +121,12 @@ export default function DoctorTimelinePage() {
                   <div className="space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-base font-bold text-[#111111]">{apt.patient_name}</h3>
-                      <span className="text-xs font-medium text-[#626262]">
-                        ({apt.patient_age || 30}
-                        {apt.patient_gender ? ` / ${apt.patient_gender[0].toUpperCase()}` : ""})
-                      </span>
+                      {(apt.patient_age !== undefined && apt.patient_age !== null) || apt.patient_gender ? (
+                        <span className="text-xs font-medium text-[#626262]">
+                          ({apt.patient_age !== undefined && apt.patient_age !== null ? `${apt.patient_age} yrs` : "Age not provided"}
+                          {apt.patient_gender ? ` / ${apt.patient_gender[0].toUpperCase()}` : ""})
+                        </span>
+                      ) : null}
                       <StatusBadge status={apt.status} size="sm" />
                       <UrgencyBadge urgency={apt.urgency} />
                     </div>
@@ -132,7 +140,16 @@ export default function DoctorTimelinePage() {
                 {/* Right: AI Intake Badge & Open Workspace CTA */}
                 <div className="flex items-center gap-3 lg:self-center">
                   <div className="hidden sm:block">
-                    <AiBadge status="ready" label="Intake Brief" />
+                    {(() => {
+                      const llmState = apt.integrations?.find((i) => i.channel === "llm")?.state;
+                      const aiStatus =
+                        llmState === "failed"
+                          ? "unavailable"
+                          : llmState === "pending" || llmState === "retrying"
+                          ? "pending"
+                          : "ready";
+                      return <AiBadge status={aiStatus} label="Intake Brief" />;
+                    })()}
                   </div>
 
                   <Button asChild variant="primary" size="default" className="text-xs">

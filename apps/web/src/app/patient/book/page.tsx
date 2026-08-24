@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Textarea";
 import { HoldCountdownBadge } from "@/components/common/HoldCountdownBadge";
 import { CardSkeleton } from "@/components/common/Skeleton";
-import { formatDateTime, formatTime, formatDate, formatSlotRange, addDays } from "@/lib/dates";
+import { formatDateTime, formatTime, formatDate, formatDateOnly, formatSlotRange, addDays } from "@/lib/dates";
 import { formatCurrencyINR } from "@/lib/utils";
 import { Hold, AppointmentDetail } from "@/types/api";
 import {
@@ -66,7 +66,7 @@ function BookingWizardContent() {
     queryKey: [
       "booking-slots",
       selectedDoctorId,
-      selectedDate.toISOString().split("T")[0],
+      formatDateOnly(selectedDate, "Asia/Kolkata"),
       selectedDuration,
     ],
     queryFn: () => apiClient.getDoctorAvailability(selectedDoctorId, selectedDate, selectedDuration),
@@ -104,13 +104,19 @@ function BookingWizardContent() {
     },
   });
 
-  // Auto-acquire hold if arriving with starts_at query param
+  const acquiredHoldKeyRef = React.useRef<string | null>(null);
+
+  // Auto-acquire hold if arriving with starts_at query param (protected against StrictMode duplicate mounts)
   React.useEffect(() => {
-    if (queryStartsAt && !activeHold && currentStep === 3) {
+    if (queryStartsAt && currentStep === 3) {
+      const holdKey = `${selectedDoctorId}:${queryStartsAt}:${selectedDuration}`;
+      if (acquiredHoldKeyRef.current === holdKey || activeHold) {
+        return;
+      }
+      acquiredHoldKeyRef.current = holdKey;
       holdMutation.mutate(queryStartsAt);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryStartsAt]);
+  }, [queryStartsAt, selectedDoctorId, selectedDuration, currentStep, activeHold, holdMutation]);
 
   // Mutation: Confirm Booking
   const confirmMutation = useMutation({
@@ -282,7 +288,7 @@ function BookingWizardContent() {
             <div className="flex items-center gap-2 overflow-x-auto pb-2">
               {dateOptions.map((d, i) => {
                 const isSelected =
-                  selectedDate.toISOString().split("T")[0] === d.toISOString().split("T")[0];
+                  formatDateOnly(selectedDate, "Asia/Kolkata") === formatDateOnly(d, "Asia/Kolkata");
                 return (
                   <button
                     key={i}
@@ -327,6 +333,7 @@ function BookingWizardContent() {
                     type="button"
                     disabled={!slot.available}
                     onClick={() => handleSlotSelect(slot.starts_at)}
+                    aria-pressed={activeHold?.starts_at === slot.starts_at}
                     aria-label={`${formatSlotRange(slot.starts_at, slot.ends_at)}, ${
                       slot.available ? "Available for hold reservation" : slot.conflict_reason || "Unavailable"
                     }`}

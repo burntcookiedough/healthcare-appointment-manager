@@ -24,20 +24,6 @@ import {
   Cell,
 } from "recharts";
 
-const CHART_DATA = [
-  { time: "09:00", confirmed: 4, in_progress: 1 },
-  { time: "11:00", confirmed: 6, in_progress: 2 },
-  { time: "13:00", confirmed: 3, in_progress: 1 },
-  { time: "15:00", confirmed: 7, in_progress: 3 },
-  { time: "17:00", confirmed: 5, in_progress: 0 },
-];
-
-const PIE_DATA = [
-  { name: "Succeeded", value: 14, color: "#26734d" },
-  { name: "Retrying", value: 2, color: "#b54708" },
-  { name: "Failed", value: 1, color: "#b42318" },
-];
-
 export default function AdminOverviewPage() {
   const { data: doctors, isLoading: isDocsLoading, isError: isDocsError } = useQuery({
     queryKey: ["admin-doctors"],
@@ -60,6 +46,68 @@ export default function AdminOverviewPage() {
   });
 
   const failedIntegrations = integrations?.filter((i) => i.state === "failed") || [];
+
+  const pieData = React.useMemo(() => {
+    if (!integrations || integrations.length === 0) {
+      return [{ name: "Succeeded", value: 1, color: "#26734d" }];
+    }
+    const succeeded = integrations.filter((i) => i.state === "succeeded").length;
+    const retrying = integrations.filter((i) => i.state === "retrying").length;
+    const failed = integrations.filter((i) => i.state === "failed").length;
+    const pending = integrations.filter((i) => i.state === "pending").length;
+
+    const arr = [];
+    if (succeeded > 0) arr.push({ name: "Succeeded", value: succeeded, color: "#26734d" });
+    if (retrying > 0) arr.push({ name: "Retrying", value: retrying, color: "#b54708" });
+    if (failed > 0) arr.push({ name: "Failed", value: failed, color: "#b42318" });
+    if (pending > 0) arr.push({ name: "Pending", value: pending, color: "#666861" });
+    return arr.length > 0 ? arr : [{ name: "Succeeded", value: 1, color: "#26734d" }];
+  }, [integrations]);
+
+  const totalIntegrations = integrations?.length || 0;
+  const succeededCount = integrations?.filter((i) => i.state === "succeeded").length || 0;
+  const retryingCount = integrations?.filter((i) => i.state === "retrying").length || 0;
+  const failedCount = integrations?.filter((i) => i.state === "failed").length || 0;
+
+  const chartData = React.useMemo(() => {
+    const buckets: Record<string, { confirmed: number; in_progress: number }> = {
+      "09:00": { confirmed: 0, in_progress: 0 },
+      "11:00": { confirmed: 0, in_progress: 0 },
+      "13:00": { confirmed: 0, in_progress: 0 },
+      "15:00": { confirmed: 0, in_progress: 0 },
+      "17:00": { confirmed: 0, in_progress: 0 },
+    };
+
+    if (appointments && appointments.length > 0) {
+      appointments.forEach((apt) => {
+        try {
+          const d = new Date(apt.starts_at);
+          const hourStr = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", hour: "numeric", hour12: false }).format(d);
+          const h = Number(hourStr);
+          let bucketKey = "09:00";
+          if (h >= 17) bucketKey = "17:00";
+          else if (h >= 15) bucketKey = "15:00";
+          else if (h >= 13) bucketKey = "13:00";
+          else if (h >= 11) bucketKey = "11:00";
+          else bucketKey = "09:00";
+
+          if (apt.status === "confirmed") {
+            buckets[bucketKey].confirmed++;
+          } else if (apt.status === "in_progress") {
+            buckets[bucketKey].in_progress++;
+          }
+        } catch {
+          // ignore parsing error
+        }
+      });
+    }
+
+    return Object.entries(buckets).map(([time, counts]) => ({
+      time,
+      confirmed: counts.confirmed,
+      in_progress: counts.in_progress,
+    }));
+  }, [appointments]);
 
   return (
     <div className="space-y-8">
@@ -177,7 +225,7 @@ export default function AdminOverviewPage() {
 
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={CHART_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <XAxis dataKey="time" stroke="#8e8e89" fontSize={11} />
                 <YAxis stroke="#8e8e89" fontSize={11} allowDecimals={false} />
                 <Tooltip
@@ -207,7 +255,7 @@ export default function AdminOverviewPage() {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={PIE_DATA}
+                  data={pieData}
                   dataKey="value"
                   nameKey="name"
                   cx="50%"
@@ -216,7 +264,7 @@ export default function AdminOverviewPage() {
                   outerRadius={65}
                   paddingAngle={4}
                 >
-                  {PIE_DATA.map((entry, index) => (
+                  {pieData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
@@ -239,21 +287,27 @@ export default function AdminOverviewPage() {
                 <span className="h-2.5 w-2.5 rounded-full bg-[#26734d]" />
                 <span>Succeeded</span>
               </span>
-              <span className="font-bold text-[#111111]">82%</span>
+              <span className="font-bold text-[#111111]">
+                {totalIntegrations > 0 ? Math.round((succeededCount / totalIntegrations) * 100) : 100}%
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full bg-[#b54708]" />
                 <span>Retrying</span>
               </span>
-              <span className="font-bold text-[#111111]">12%</span>
+              <span className="font-bold text-[#111111]">
+                {totalIntegrations > 0 ? Math.round((retryingCount / totalIntegrations) * 100) : 0}%
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-full bg-[#b42318]" />
                 <span>Failed</span>
               </span>
-              <span className="font-bold text-[#111111]">6%</span>
+              <span className="font-bold text-[#111111]">
+                {totalIntegrations > 0 ? Math.round((failedCount / totalIntegrations) * 100) : 0}%
+              </span>
             </div>
           </div>
         </div>

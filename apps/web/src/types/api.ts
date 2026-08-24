@@ -63,6 +63,19 @@ export interface DoctorDetail extends DoctorSummary {
   working_hours: WorkingHoursRule[];
 }
 
+export interface DoctorCreateRequest {
+  name: string;
+  credentials: string;
+  specialization: string;
+  experience_years?: number;
+  consultation_fee?: number;
+  biography?: string;
+  languages?: string[];
+  time_zone?: string;
+  accepted_durations?: number[];
+  working_hours?: WorkingHoursRule[];
+}
+
 export interface AvailabilitySlot {
   doctor_id: string;
   starts_at: string; // UTC ISO 8601
