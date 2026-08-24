@@ -1,0 +1,94 @@
+# Render Blueprint for the documented free-tier-friendly topology.
+# Render currently does not offer a free plan for background workers. The API may use
+# free where available; the worker entry below uses the lowest worker tier placeholder.
+# Review plan/region availability and all sync:false values before applying.
+services:
+  - type: web
+    name: healthcare-api
+    runtime: python
+    rootDir: apps/api
+    plan: free
+    buildCommand: pip install --disable-pip-version-check uv && uv sync --locked --extra dev
+    startCommand: uv run uvicorn healthcare_api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health/live
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: API_PREFIX
+        value: /api/v1
+      - key: HOLD_TTL_SECONDS
+        value: "600"
+      - key: READINESS_TIMEOUT_SECONDS
+        value: "2"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: SENDGRID_FROM_EMAIL
+        sync: false
+      - key: LLM_PROVIDER
+        value: none
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+  - type: worker
+    name: healthcare-worker
+    runtime: python
+    rootDir: apps/worker
+    plan: starter
+    buildCommand: pip install --disable-pip-version-check uv && uv sync --locked
+    startCommand: uv run celery -A healthcare_worker.celery_app:celery_app worker --loglevel=INFO
+    envVars:
+      - key: HEALTHCARE_WORKER_SERVICE_NAME
+        value: healthcare-worker
+      - key: HEALTHCARE_WORKER_ENVIRONMENT
+        value: production
+      - key: HEALTHCARE_WORKER_EVENT_VERSION
+        value: "1"
+      - key: HEALTHCARE_WORKER_MAX_RETRIES
+        value: "5"
+      - key: HEALTHCARE_WORKER_RETRY_BASE_DELAY_SECONDS
+        value: "5"
+      - key: HEALTHCARE_WORKER_RETRY_MAX_DELAY_SECONDS
+        value: "900"
+      - key: HEALTHCARE_WORKER_RETRY_JITTER_SECONDS
+        value: "3"
+      - key: HEALTHCARE_WORKER_TASK_QUEUE
+        value: healthcare-worker
+      - key: HEALTHCARE_WORKER_BROKER_URL
+        sync: false
+      - key: HEALTHCARE_WORKER_RESULT_BACKEND_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REFRESH_TOKEN
+        sync: false
+      - key: GOOGLE_CALENDAR_ID
+        value: primary
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: SENDGRID_FROM_EMAIL
+        sync: false
+      - key: LLM_PROVIDER
+        value: none
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        sync: false
