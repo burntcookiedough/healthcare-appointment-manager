@@ -49,7 +49,7 @@ def _async_url(url: str) -> str:
     return url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture
 async def database_engine() -> AsyncEngine:
     assert TEST_DATABASE_URL is not None
     active_engine = create_async_engine(_async_url(TEST_DATABASE_URL), pool_pre_ping=True)
