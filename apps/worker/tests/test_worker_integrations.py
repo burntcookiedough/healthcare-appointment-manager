@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -221,6 +222,34 @@ def test_calendar_delete_is_idempotent_when_provider_event_is_absent(status_code
 
     assert result.is_success
     assert result.provider_reference == "trusted-event-1"
+
+
+def test_calendar_create_always_returns_deterministic_idempotency_reference() -> None:
+    resolver = InMemoryTrustedDataResolver(
+        calendar_credentials={"default": OAuthCredentials(access_token="synthetic-token")}
+    )
+    transport = FakeTransport(HttpResponse(200, {}, b'{"id":"provider-response-id"}'))
+    adapter = GoogleCalendarOAuthAdapter(
+        client_id="client",
+        client_secret="secret",
+        resolver=resolver,
+        transport=transport,
+    )
+    request = CalendarRequest(
+        appointment_id=uuid4(),
+        starts_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
+        ends_at=datetime(2026, 8, 24, 11, tzinfo=UTC),
+        provider_event_reference="stale-payload-reference",
+        action="create",
+    )
+
+    result = adapter.upsert_event(request, idempotency_key="event:calendar:create")
+
+    expected = hashlib.sha256(b"event:calendar:create").hexdigest()[:32]
+    assert result.is_success
+    assert result.provider_reference == expected
+    body = json.loads(transport.requests[0][3])
+    assert body["id"] == expected
 
 
 def test_canonical_and_legacy_llm_task_kinds_are_explicit() -> None:
@@ -573,6 +602,149 @@ def test_postgres_resolver_binds_summary_and_calendar_references_without_contact
     assert any("integration_operations" in query for query in connection.queries)
 
 
+def test_postgres_resolver_preserves_all_prescription_items() -> None:
+    prescription_id = uuid4()
+    first_item_id = uuid4()
+    second_item_id = uuid4()
+    rows = [
+        {
+            "prescription_id": prescription_id,
+            "prescription_version": 3,
+            "item_id": first_item_id,
+            "medication_name": "First synthetic medication",
+            "dosage": "5 mg",
+            "route": "oral",
+            "frequency": "once_daily",
+            "start_date": date(2026, 8, 24),
+            "end_date": date(2026, 8, 24),
+            "duration_days": 1,
+            "instructions": "Take with water",
+            "time_zone": "UTC",
+        },
+        {
+            "prescription_id": prescription_id,
+            "prescription_version": 3,
+            "item_id": second_item_id,
+            "medication_name": "Second synthetic medication",
+            "dosage": "10 mg",
+            "route": "oral",
+            "frequency": "twice_daily",
+            "start_date": date(2026, 8, 24),
+            "end_date": date(2026, 8, 24),
+            "duration_days": 1,
+            "instructions": "Take after food",
+            "time_zone": "UTC",
+        },
+    ]
+
+    class Connection:
+        async def fetchrow(self, _statement: str, *_parameters: object) -> None:
+            return None
+
+        async def fetch(self, statement: str, *_parameters: object) -> list[dict[str, object]]:
+            return rows if "prescription_items" in statement else []
+
+    class Acquire:
+        async def __aenter__(self) -> Connection:
+            return Connection()
+
+        async def __aexit__(self, *_args: object) -> bool:
+            return False
+
+    class Pool:
+        def acquire(self) -> Acquire:
+            return Acquire()
+
+    resolver = PostgresTrustedDataResolver(Pool())
+    request = envelope(
+        EventType.MEDICATION_REMINDER.value,
+        {
+            "prescription_id": str(prescription_id),
+            "prescription_version": 3,
+            "occurrence_id": str(uuid4()),
+        },
+    )
+
+    async def scenario() -> tuple[object, ...]:
+        async with resolver.bind(request):
+            raw = resolver.resolve_prescription_schedule(prescription_id, 3)
+            assert isinstance(raw, tuple)
+            return raw
+
+    schedules = asyncio.run(scenario())
+
+    assert len(schedules) == 2
+    assert {item["prescription_item_id"] for item in schedules if isinstance(item, dict)} == {
+        first_item_id,
+        second_item_id,
+    }
+
+
+@pytest.mark.parametrize("failure", ["source_shape", "driver"])
+def test_postgres_resolver_classifies_source_shape_and_driver_failures(
+    failure: str,
+) -> None:
+    prescription_id = uuid4()
+
+    class Connection:
+        async def fetchrow(self, _statement: str, *_parameters: object) -> None:
+            return None
+
+        async def fetch(self, statement: str, *_parameters: object) -> list[dict[str, object]]:
+            if "prescription_items" not in statement:
+                return []
+            if failure == "driver":
+                raise RuntimeError("synthetic database driver failure")
+            return [{"prescription_id": "not-a-uuid", "item_id": uuid4()}]
+
+    class Acquire:
+        async def __aenter__(self) -> Connection:
+            return Connection()
+
+        async def __aexit__(self, *_args: object) -> bool:
+            return False
+
+    class Pool:
+        def acquire(self) -> Acquire:
+            return Acquire()
+
+    resolver = PostgresTrustedDataResolver(Pool())
+    request = envelope(
+        EventType.MEDICATION_REMINDER.value,
+        {
+            "prescription_id": str(prescription_id),
+            "prescription_version": 1,
+            "occurrence_id": str(uuid4()),
+        },
+    )
+
+    async def scenario() -> tuple[TrustedDataResolutionError, ProcessingResult]:
+        async with resolver.bind(request):
+            with pytest.raises(TrustedDataResolutionError) as error:
+                resolver.resolve_prescription_schedule(prescription_id, 1)
+            dispatcher = MedicationReminderDispatcher(
+                resolver=resolver,
+                email=DeterministicFakeEmailAdapter(),
+                occurrence_store=InMemoryReminderOccurrenceStore(),
+            )
+            result = dispatcher.dispatch(
+                MedicationReminderRequest(
+                    prescription_id=prescription_id,
+                    prescription_version=1,
+                    occurrence_id=uuid4(),
+                ),
+                idempotency_key="event:resolver-classification",
+            )
+            return error.value, result
+
+    error, result = asyncio.run(scenario())
+
+    assert error.code == "PRESCRIPTION_REFERENCE_ERROR"
+    assert error.retryable is (failure == "driver")
+    assert result.error_code == "PRESCRIPTION_REFERENCE_ERROR"
+    assert result.is_retryable is (failure == "driver")
+
+
 def test_sendgrid_calendar_adapters_are_mockable_and_fail_closed() -> None:
     resolver = InMemoryTrustedDataResolver(
         email={
@@ -775,6 +947,31 @@ def test_async_summary_repository_is_awaited_before_success() -> None:
     assert len(repository.records) == 1
 
 
+def test_sync_processor_does_not_create_async_summary_persistence_coroutine() -> None:
+    source_id = uuid4()
+    repository = type("Repository", (), {})()
+    repository.persist_summary = AsyncMock()
+    dependencies = HandlerDependencies(
+        email=DeterministicFakeEmailAdapter(),
+        calendar=DeterministicFakeGoogleCalendarAdapter(),
+        clinical_llm=DeterministicFakeClinicalLLMAdapter(),
+        summary_repository=repository,
+    )
+    request = ClinicalSummaryRequest(
+        source_record_reference=source_id,
+        source_version=1,
+        task_kind="pre_visit",
+    )
+
+    result = process_envelope(
+        envelope(EventType.CLINICAL_LLM_SUMMARY.value, request.model_dump(mode="json")),
+        registry=build_default_registry(dependencies),
+    )
+
+    assert result.error_code == "ASYNC_HANDLER_REQUIRED"
+    repository.persist_summary.assert_not_called()
+
+
 def test_postgres_summary_repository_updates_pending_artifact_durably() -> None:
     class FakeTransaction:
         async def __aenter__(self) -> FakeTransaction:
@@ -889,6 +1086,101 @@ def test_medication_reminders_are_timezone_aware_and_restart_safe() -> None:
     assert dispatcher.dispatch(request, idempotency_key="event:occurrence").is_success
     assert dispatcher.dispatch(request, idempotency_key="event:occurrence").is_success
     assert len(email.calls) == 1
+
+
+def test_medication_dispatch_supports_all_items_with_stable_item_identity() -> None:
+    prescription_id = uuid4()
+    first_item_id = uuid4()
+    second_item_id = uuid4()
+
+    def schedule(item_id: Any, medication: str) -> PrescriptionSchedule:
+        return PrescriptionSchedule(
+            prescription_id=prescription_id,
+            prescription_version=7,
+            prescription_item_id=item_id,
+            medication_reference=str(item_id),
+            medication_name=medication,
+            start_date=date(2026, 8, 24),
+            duration_days=1,
+            frequency="once_daily",
+            time_zone="UTC",
+        )
+
+    first = schedule(first_item_id, "First synthetic medication")
+    second = schedule(second_item_id, "Second synthetic medication")
+    resolver = InMemoryTrustedDataResolver(prescriptions={f"{prescription_id}:7": [first, second]})
+    email = DeterministicFakeEmailAdapter()
+    dispatcher = MedicationReminderDispatcher(
+        resolver=resolver,
+        email=email,
+        occurrence_store=InMemoryReminderOccurrenceStore(),
+    )
+    first_occurrence = generate_medication_occurrences(first)[0]
+    second_occurrence = generate_medication_occurrences(second)[0]
+
+    first_result = dispatcher.dispatch(
+        MedicationReminderRequest(
+            prescription_id=prescription_id,
+            prescription_version=7,
+            prescription_item_id=first_item_id,
+            occurrence_id=first_occurrence.occurrence_id,
+        ),
+        idempotency_key="event:medication:first",
+    )
+    second_result = dispatcher.dispatch(
+        MedicationReminderRequest(
+            prescription_id=prescription_id,
+            prescription_version=7,
+            prescription_item_id=second_item_id,
+            occurrence_id=second_occurrence.occurrence_id,
+        ),
+        idempotency_key="event:medication:second",
+    )
+
+    assert first_result.is_success
+    assert second_result.is_success
+    assert first_occurrence.occurrence_id != second_occurrence.occurrence_id
+    assert len(email.calls) == 2
+
+
+def test_medication_dispatch_normalizes_missing_item_identity_upsert_error() -> None:
+    prescription_id = uuid4()
+    schedule = PrescriptionSchedule(
+        prescription_id=prescription_id,
+        prescription_version=1,
+        medication_reference="legacy-medication-reference",
+        start_date=date(2026, 8, 24),
+        duration_days=1,
+        frequency="once_daily",
+        time_zone="UTC",
+    )
+    occurrence = generate_medication_occurrences(schedule)[0]
+
+    class Executor:
+        def execute(self, _statement: str, *_parameters: object) -> int:
+            raise ValueError("prescription item identity is required")
+
+        def fetch_value(self, _statement: str, *_parameters: object) -> bool:
+            return False
+
+    resolver = InMemoryTrustedDataResolver(prescriptions={f"{prescription_id}:1": schedule})
+    dispatcher = MedicationReminderDispatcher(
+        resolver=resolver,
+        email=DeterministicFakeEmailAdapter(),
+        occurrence_store=PostgresReminderOccurrenceStore(Executor()),
+    )
+
+    result = dispatcher.dispatch(
+        MedicationReminderRequest(
+            prescription_id=prescription_id,
+            prescription_version=1,
+            occurrence_id=occurrence.occurrence_id,
+        ),
+        idempotency_key="event:medication:missing-item",
+    )
+
+    assert result.outcome is ProcessingOutcome.TERMINAL_FAILURE
+    assert result.error_code == "INVALID_REMINDER_SCHEDULE"
 
 
 def test_postgres_reminder_cancellation_is_the_dispatch_fence() -> None:

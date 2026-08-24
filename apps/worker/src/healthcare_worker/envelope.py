@@ -71,6 +71,7 @@ SAFE_REFERENCE_KEYS = frozenset(
         "schema_version",
         "task_kind",
         "credential_reference",
+        "prescription_version",
     }
 )
 _NORMALIZE_KEY = re.compile(r"[^a-z0-9_]+")

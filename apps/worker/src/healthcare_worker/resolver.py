@@ -130,8 +130,12 @@ LEFT JOIN reminder_preferences AS preference
 WHERE prescription.id = $1
   AND prescription.version = $2
 ORDER BY item.created_at, item.id
-LIMIT 2
+LIMIT 101
 """
+
+
+class _SourceShapeError(ValueError):
+    """A permanent trusted-row shape problem, distinct from driver failures."""
 
 
 @dataclass(slots=True)
@@ -185,7 +189,13 @@ def _json_default(value: object) -> str:
 
 
 def _row_value(row: Mapping[str, Any], key: str) -> object:
-    return row.get(key)
+    getter = getattr(row, "get", None)
+    if not callable(getter):
+        raise _SourceShapeError("trusted source row is not mapping-shaped")
+    try:
+        return getter(key)
+    except Exception as error:
+        raise _SourceShapeError("trusted source row cannot be read") from error
 
 
 class PostgresTrustedDataResolver(TrustedDataResolver):
@@ -284,97 +294,136 @@ class PostgresTrustedDataResolver(TrustedDataResolver):
         try:
             async with self._pool.acquire() as connection:
                 if needs_email and email_uuid is not None:
-                    row = await connection.fetchrow(EMAIL_REFERENCE_SQL, email_uuid)
-                    bound.email_reference = str(email_uuid)
-                    bound.email_reference_exists = row is not None
-                    # The schema proves patient ownership but has no contact or
-                    # template store, so a known patient cannot be sent fabricated mail.
-                    if row is not None:
-                        bound.email_error = ("EMAIL_RECIPIENT_UNAVAILABLE", False)
+                    try:
+                        row = await connection.fetchrow(EMAIL_REFERENCE_SQL, email_uuid)
+                        bound.email_reference = str(email_uuid)
+                        bound.email_reference_exists = row is not None
+                        # The schema proves patient ownership but has no contact or
+                        # template store, so a known patient cannot be sent fabricated mail.
+                        if row is not None:
+                            bound.email_error = ("EMAIL_RECIPIENT_UNAVAILABLE", False)
+                    except _SourceShapeError:
+                        bound.email_error = ("EMAIL_REFERENCE_ERROR", False)
+                    except Exception:
+                        bound.email_error = ("EMAIL_REFERENCE_ERROR", True)
 
                 if needs_calendar_reference and calendar_uuid is not None:
-                    bound.calendar_appointment_id = calendar_uuid
-                    row = await connection.fetchrow(CALENDAR_EVENT_REFERENCE_SQL, calendar_uuid)
-                    provided_reference = _text_value(
-                        payload.get("provider_event_reference") or payload.get("calendar_event_id"),
-                        max_length=256,
-                    )
-                    candidate = self._calendar_reference_from_row(row)
-                    if row is None:
-                        if provided_reference is not None:
+                    try:
+                        bound.calendar_appointment_id = calendar_uuid
+                        row = await connection.fetchrow(CALENDAR_EVENT_REFERENCE_SQL, calendar_uuid)
+                        provided_reference = _text_value(
+                            payload.get("provider_event_reference")
+                            or payload.get("calendar_event_id"),
+                            max_length=256,
+                        )
+                        candidate = self._calendar_reference_from_row(row)
+                        if row is None:
+                            if provided_reference is not None:
+                                bound.calendar_event_error = (
+                                    "CALENDAR_EVENT_REFERENCE_UNVERIFIED",
+                                    False,
+                                )
+                        elif candidate is None:
                             bound.calendar_event_error = (
-                                "CALENDAR_EVENT_REFERENCE_UNVERIFIED",
+                                "CALENDAR_EVENT_REFERENCE_MISSING",
                                 False,
                             )
-                    elif candidate is None:
-                        bound.calendar_event_error = ("CALENDAR_EVENT_REFERENCE_MISSING", False)
-                    elif provided_reference is not None and provided_reference != candidate:
-                        bound.calendar_event_error = (
-                            "CALENDAR_EVENT_REFERENCE_MISMATCH",
-                            False,
-                        )
-                    else:
-                        bound.calendar_event_reference = candidate
+                        elif provided_reference is not None and provided_reference != candidate:
+                            bound.calendar_event_error = (
+                                "CALENDAR_EVENT_REFERENCE_MISMATCH",
+                                False,
+                            )
+                        else:
+                            bound.calendar_event_reference = candidate
+                    except _SourceShapeError:
+                        bound.calendar_event_error = ("CALENDAR_REFERENCE_ERROR", False)
+                    except Exception:
+                        bound.calendar_event_error = ("CALENDAR_REFERENCE_ERROR", True)
 
                 if needs_summary and source_uuid is not None and source_version is not None:
-                    assert isinstance(task_kind, str)
-                    bound.summary_task_kind = task_kind
-                    if task_kind == "pre_visit":
-                        row = await connection.fetchrow(
-                            SUMMARY_SYMPTOM_SQL, source_uuid, source_version
-                        )
-                        if row is not None:
-                            source_text = _row_value(row, "symptoms_text")
-                            if not isinstance(source_text, str):
-                                raise ValueError("symptom source is unavailable")
-                            bound.summary = SummarySource(
-                                source_reference=source_uuid,
-                                source_version=source_version,
-                                source_text=source_text,
+                    try:
+                        assert isinstance(task_kind, str)
+                        bound.summary_task_kind = task_kind
+                        if task_kind == "pre_visit":
+                            row = await connection.fetchrow(
+                                SUMMARY_SYMPTOM_SQL, source_uuid, source_version
                             )
-                    elif task_kind in {"post_visit", "plain_language_summary"}:
-                        row = await connection.fetchrow(
-                            SUMMARY_VISIT_SQL, source_uuid, source_version
-                        )
-                        if row is not None:
-                            note_text = _row_value(row, "notes_text")
-                            item_rows = await connection.fetch(
-                                SUMMARY_PRESCRIPTION_ITEMS_SQL, source_uuid
+                            if row is not None:
+                                source_text = _row_value(row, "symptoms_text")
+                                if not isinstance(source_text, str):
+                                    raise _SourceShapeError("symptom source is unavailable")
+                                try:
+                                    bound.summary = SummarySource(
+                                        source_reference=source_uuid,
+                                        source_version=source_version,
+                                        source_text=source_text,
+                                    )
+                                except Exception as error:
+                                    raise _SourceShapeError("symptom source is invalid") from error
+                        elif task_kind in {"post_visit", "plain_language_summary"}:
+                            row = await connection.fetchrow(
+                                SUMMARY_VISIT_SQL, source_uuid, source_version
                             )
-                            if len(item_rows) > 100:
-                                bound.summary_error = ("SUMMARY_SOURCE_TOO_LARGE", False)
-                            else:
-                                source_text = self._visit_source_text(note_text, item_rows)
-                                bound.summary = SummarySource(
-                                    source_reference=source_uuid,
-                                    source_version=source_version,
-                                    source_text=source_text,
+                            if row is not None:
+                                note_text = _row_value(row, "notes_text")
+                                item_rows = await connection.fetch(
+                                    SUMMARY_PRESCRIPTION_ITEMS_SQL, source_uuid
                                 )
+                                if not isinstance(item_rows, list):
+                                    raise _SourceShapeError("prescription source rows are invalid")
+                                if len(item_rows) > 100:
+                                    bound.summary_error = ("SUMMARY_SOURCE_TOO_LARGE", False)
+                                else:
+                                    source_text = self._visit_source_text(note_text, item_rows)
+                                    try:
+                                        bound.summary = SummarySource(
+                                            source_reference=source_uuid,
+                                            source_version=source_version,
+                                            source_text=source_text,
+                                        )
+                                    except Exception as error:
+                                        raise _SourceShapeError(
+                                            "visit source is invalid"
+                                        ) from error
+                    except _SourceShapeError:
+                        bound.summary_error = ("SUMMARY_SOURCE_ERROR", False)
+                    except Exception:
+                        bound.summary_error = ("SUMMARY_SOURCE_ERROR", True)
 
                 if (
                     needs_prescription
                     and prescription_uuid is not None
                     and prescription_version is not None
                 ):
-                    rows = await connection.fetch(
-                        PRESCRIPTION_SCHEDULE_SQL, prescription_uuid, prescription_version
-                    )
-                    if len(rows) == 1:
-                        bound.prescriptions[(prescription_uuid, prescription_version)] = (
-                            self._prescription_schedule_from_row(rows[0])
+                    try:
+                        rows = await connection.fetch(
+                            PRESCRIPTION_SCHEDULE_SQL, prescription_uuid, prescription_version
                         )
-                    elif len(rows) > 1:
-                        bound.prescription_error = ("PRESCRIPTION_REFERENCE_UNSUPPORTED", False)
+                        if not isinstance(rows, list):
+                            raise _SourceShapeError("prescription schedule rows are invalid")
+                        if len(rows) > 100:
+                            bound.prescription_error = ("PRESCRIPTION_SOURCE_TOO_LARGE", False)
+                        elif rows:
+                            schedules = tuple(
+                                self._prescription_schedule_from_row(row) for row in rows
+                            )
+                            bound.prescriptions[(prescription_uuid, prescription_version)] = (
+                                schedules[0] if len(schedules) == 1 else schedules
+                            )
+                    except _SourceShapeError:
+                        bound.prescription_error = ("PRESCRIPTION_REFERENCE_ERROR", False)
+                    except Exception:
+                        bound.prescription_error = ("PRESCRIPTION_REFERENCE_ERROR", True)
         except Exception:
             # Provider adapters receive only normalized retry codes; the database
             # driver exception is intentionally never logged or persisted.
-            if needs_email:
+            if needs_email and bound.email_error is None:
                 bound.email_error = ("EMAIL_REFERENCE_ERROR", True)
-            if needs_calendar_reference:
+            if needs_calendar_reference and bound.calendar_event_error is None:
                 bound.calendar_event_error = ("CALENDAR_REFERENCE_ERROR", True)
-            if needs_summary:
+            if needs_summary and bound.summary_error is None:
                 bound.summary_error = ("SUMMARY_SOURCE_ERROR", True)
-            if needs_prescription:
+            if needs_prescription and bound.prescription_error is None:
                 bound.prescription_error = ("PRESCRIPTION_REFERENCE_ERROR", True)
         return bound
 
@@ -397,7 +446,7 @@ class PostgresTrustedDataResolver(TrustedDataResolver):
     @staticmethod
     def _visit_source_text(note_text: object, item_rows: list[Mapping[str, Any]]) -> str:
         if not isinstance(note_text, str):
-            raise ValueError("visit note source is unavailable")
+            raise _SourceShapeError("visit note source is unavailable")
         if not item_rows:
             return note_text
         items: list[dict[str, object]] = []
@@ -428,9 +477,9 @@ class PostgresTrustedDataResolver(TrustedDataResolver):
         item_id = _row_value(row, "item_id")
         version = _row_value(row, "prescription_version")
         if not isinstance(prescription_id, UUID) or not isinstance(item_id, UUID):
-            raise ValueError("prescription reference is invalid")
+            raise _SourceShapeError("prescription reference is invalid")
         if not isinstance(version, int) or version < 1:
-            raise ValueError("prescription version is invalid")
+            raise _SourceShapeError("prescription version is invalid")
         return {
             "prescription_id": prescription_id,
             "prescription_version": version,

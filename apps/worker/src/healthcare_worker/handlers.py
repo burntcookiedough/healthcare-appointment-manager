@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Generator
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -131,6 +131,51 @@ def _processing_result(envelope: EventEnvelope, adapter_result: AdapterResult) -
     )
 
 
+def _is_async_callable(value: object) -> bool:
+    """Identify async repository methods without invoking them prematurely."""
+
+    return inspect.iscoroutinefunction(value) or (
+        callable(value) and inspect.iscoroutinefunction(value.__call__)
+    )
+
+
+class _PersistenceAwaitable:
+    """Own an awaitable returned by a synchronous repository facade.
+
+    The synchronous processor closes handler awaitables it cannot drive.  Keep
+    ownership of the nested persistence coroutine so that close also closes the
+    nested object instead of leaking it.
+    """
+
+    def __init__(
+        self,
+        persisted: Awaitable[object],
+        success: Callable[[], ProcessingResult],
+        event_id: UUID,
+    ) -> None:
+        self._persisted = persisted
+        self._success = success
+        self._event_id = event_id
+
+    def __await__(self) -> Generator[Any, None, ProcessingResult]:
+        return self._wait().__await__()
+
+    async def _wait(self) -> ProcessingResult:
+        try:
+            await self._persisted
+        except Exception:
+            return ProcessingResult.retryable(
+                self._event_id,
+                error_code="SUMMARY_PERSISTENCE_ERROR",
+            )
+        return self._success()
+
+    def close(self) -> None:
+        close = getattr(self._persisted, "close", None)
+        if callable(close):
+            close()
+
+
 def _email_handler(
     dependencies: HandlerDependencies,
 ) -> Callable[[EventEnvelope], ProcessingResult]:
@@ -221,12 +266,14 @@ def _llm_handler(dependencies: HandlerDependencies) -> EventHandler:
                 metadata=metadata,
                 output=output,
             )
-            persisted = repository.persist_summary(record)
-            if inspect.isawaitable(persisted):
+            persist_summary = repository.persist_summary
+            if _is_async_callable(persist_summary):
 
                 async def await_persistence() -> ProcessingResult:
                     try:
-                        await persisted
+                        persisted = persist_summary(record)
+                        if inspect.isawaitable(persisted):
+                            await persisted
                     except Exception:
                         return ProcessingResult.retryable(
                             envelope.event_id,
@@ -235,6 +282,13 @@ def _llm_handler(dependencies: HandlerDependencies) -> EventHandler:
                     return _processing_result(envelope, result)
 
                 return await_persistence()
+            persisted = persist_summary(record)
+            if inspect.isawaitable(persisted):
+                return _PersistenceAwaitable(
+                    persisted,
+                    lambda: _processing_result(envelope, result),
+                    envelope.event_id,
+                )
         except (ValidationError, ValueError, TypeError):
             return ProcessingResult.terminal(envelope.event_id, error_code="LLM_INVALID_OUTPUT")
         except Exception:

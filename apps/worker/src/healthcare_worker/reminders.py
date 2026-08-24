@@ -11,7 +11,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .ports import AdapterResult, EmailPort, EmailRequest, TrustedDataResolver
+from .ports import (
+    AdapterResult,
+    EmailPort,
+    EmailRequest,
+    TrustedDataResolutionError,
+    TrustedDataResolver,
+)
 
 
 class PrescriptionSchedule(BaseModel):
@@ -356,6 +362,10 @@ class MedicationReminderRequest(BaseModel):
         validation_alias=AliasChoices("prescription_id", "prescription_ref")
     )
     prescription_version: int = Field(default=1, ge=1)
+    prescription_item_id: UUID | None = Field(
+        default=None,
+        validation_alias=AliasChoices("prescription_item_id", "item_id"),
+    )
     occurrence_id: UUID = Field(validation_alias=AliasChoices("occurrence_id", "occurrence_ref"))
     recipient_reference: str | None = Field(default=None, max_length=128)
     locale: str = Field(default="en", min_length=2, max_length=16)
@@ -398,24 +408,59 @@ class MedicationReminderDispatcher:
             return AdapterResult.success(provider_reference=str(request.occurrence_id))
         if self._occurrence_store.is_cancelled(request.occurrence_id):
             return AdapterResult.terminal("REMINDER_CANCELLED")
-        raw_schedule = self._resolver.resolve_prescription_schedule(
-            request.prescription_id, request.prescription_version
-        )
+        try:
+            raw_schedule = self._resolver.resolve_prescription_schedule(
+                request.prescription_id, request.prescription_version
+            )
+        except TrustedDataResolutionError as error:
+            return (
+                AdapterResult.retryable(error.code)
+                if error.retryable
+                else AdapterResult.terminal(error.code)
+            )
+        except Exception:
+            return AdapterResult.retryable("PRESCRIPTION_REFERENCE_ERROR")
         if raw_schedule is None:
             return AdapterResult.terminal("PRESCRIPTION_REFERENCE_NOT_FOUND")
         try:
-            schedule = (
-                raw_schedule
-                if isinstance(raw_schedule, PrescriptionSchedule)
-                else PrescriptionSchedule.model_validate(raw_schedule)
+            candidates = (
+                raw_schedule if isinstance(raw_schedule, (list, tuple)) else (raw_schedule,)
             )
-            occurrences = generate_medication_occurrences(schedule, from_date=schedule.start_date)
-            occurrence = next(
-                item for item in occurrences if item.occurrence_id == request.occurrence_id
-            )
+            occurrence: ReminderOccurrence | None = None
+            for candidate in candidates:
+                schedule = (
+                    candidate
+                    if isinstance(candidate, PrescriptionSchedule)
+                    else PrescriptionSchedule.model_validate(candidate)
+                )
+                if (
+                    schedule.prescription_id != request.prescription_id
+                    or schedule.prescription_version != request.prescription_version
+                    or (
+                        request.prescription_item_id is not None
+                        and schedule.prescription_item_id != request.prescription_item_id
+                    )
+                ):
+                    continue
+                occurrences = generate_medication_occurrences(
+                    schedule, from_date=schedule.start_date
+                )
+                occurrence = next(
+                    (item for item in occurrences if item.occurrence_id == request.occurrence_id),
+                    None,
+                )
+                if occurrence is not None:
+                    break
+            if occurrence is None:
+                return AdapterResult.terminal("INVALID_REMINDER_SCHEDULE")
         except (StopIteration, ValueError, TypeError):
             return AdapterResult.terminal("INVALID_REMINDER_SCHEDULE")
-        self._occurrence_store.upsert(occurrence)
+        try:
+            self._occurrence_store.upsert(occurrence)
+        except (ValueError, TypeError):
+            return AdapterResult.terminal("INVALID_REMINDER_SCHEDULE")
+        except Exception:
+            return AdapterResult.retryable("REMINDER_OCCURRENCE_STORE_ERROR")
         result = self._email.send(
             EmailRequest(
                 template_key="medication_reminder",

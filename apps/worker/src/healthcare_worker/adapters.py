@@ -363,8 +363,14 @@ class GoogleCalendarOAuthAdapter(GoogleCalendarPort):
         if credentials is None:
             return AdapterResult.terminal("CALENDAR_CREDENTIALS_NOT_FOUND")
         calendar_reference = quote(request.calendar_reference or "primary", safe="")
-        event_reference = request.provider_event_reference
+        # Creates use the deterministic provider-side event ID derived from the
+        # durable operation key.  A payload-supplied provider reference is only
+        # meaningful for an existing event being updated or deleted.
         action = request.action
+        create_reference = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:32]
+        event_reference = (
+            request.provider_event_reference if action in {"update", "delete"} else None
+        )
         validator = getattr(self._resolver, "validate_calendar_event_reference", None)
         if action in {"update", "delete"} and callable(validator):
             try:
@@ -423,7 +429,7 @@ class GoogleCalendarOAuthAdapter(GoogleCalendarPort):
                 "summary": request.event_label,
                 # Google accepts a caller-supplied opaque event id.  Deriving it
                 # from the durable operation key makes a retry a convergent create.
-                "id": hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:32],
+                "id": create_reference,
                 "start": {"dateTime": request.starts_at.isoformat()},
                 "end": {"dateTime": request.ends_at.isoformat()},
                 "extendedProperties": {"private": {"worker_idempotency_key": idempotency_key}},
@@ -455,21 +461,17 @@ class GoogleCalendarOAuthAdapter(GoogleCalendarPort):
             headers=response.headers,
         )
         if action == "create" and response.status_code == 409:
-            return AdapterResult.success(
-                provider_reference=hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:32]
-            )
+            return AdapterResult.success(provider_reference=create_reference)
         if action == "delete" and response.status_code in {404, 410}:
             # A repeated cancellation is convergent once the provider confirms
             # that the event is already absent.
             return AdapterResult.success(provider_reference=event_reference or idempotency_key)
         if classified is not None:
             return classified
-        provider_reference = event_reference or (
-            hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:32]
-            if action == "create"
-            else idempotency_key
+        provider_reference = (
+            create_reference if action == "create" else (event_reference or idempotency_key)
         )
-        if response.body:
+        if response.body and action != "create":
             try:
                 decoded = json.loads(response.body.decode("utf-8"))
                 if isinstance(decoded, dict) and isinstance(decoded.get("id"), str):
