@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from typing import Any, cast
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, RootModel, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    field_validator,
+    model_validator,
+)
 
 type JsonScalar = str | int | float | bool | None
 type JsonValue = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
@@ -45,9 +54,23 @@ SENSITIVE_PAYLOAD_KEYS = frozenset(
         "symptoms_text",
         "address",
         "email",
+        "recipient",
+        "sender",
+        "to",
+        "from",
+        "authorization",
+        "oauth",
         "body",
         "date_of_birth",
         "dob",
+    }
+)
+SAFE_REFERENCE_KEYS = frozenset(
+    {
+        "prompt_version",
+        "schema_version",
+        "task_kind",
+        "credential_reference",
     }
 )
 _NORMALIZE_KEY = re.compile(r"[^a-z0-9_]+")
@@ -66,6 +89,10 @@ _SENSITIVE_KEY_PARTS = (
     "response",
     "content",
     "body",
+    "recipient",
+    "sender",
+    "authorization",
+    "oauth",
     "_text",
 )
 
@@ -73,6 +100,8 @@ _SENSITIVE_KEY_PARTS = (
 def _is_sensitive_key(key: str) -> bool:
     normalized = _NORMALIZE_KEY.sub("_", key.casefold()).strip("_")
     if normalized.endswith(("_id", "_uuid", "_ref", "_reference")):
+        return False
+    if normalized in SAFE_REFERENCE_KEYS:
         return False
     if normalized.endswith("_name"):
         return True
@@ -131,7 +160,15 @@ class EventEnvelope(BaseModel):
         max_length=128,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
     )
-    payload: SafePayload
+    # The mapping branch keeps the ergonomic constructor used by the API
+    # dispatcher and fixtures (plain dictionaries) while the pre-validator
+    # still makes every runtime value pass through the PHI deny-list.
+    payload: SafePayload | Mapping[str, Any]
+
+    @field_validator("payload", mode="before")
+    @classmethod
+    def validate_payload(cls, value: object) -> SafePayload:
+        return SafePayload.model_validate(value)
 
     @property
     def outbox_event_id(self) -> UUID:
@@ -144,6 +181,12 @@ class EventEnvelope(BaseModel):
         """Stable key that does not contain payload or user-provided text."""
 
         return str(self.event_id)
+
+    @property
+    def safe_payload(self) -> SafePayload:
+        """Typed view of the validated payload for internal request builders."""
+
+        return cast(SafePayload, self.payload)
 
 
 # Descriptive alias for callers that use the durable-row vocabulary.

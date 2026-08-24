@@ -26,7 +26,11 @@ class ProcessingResult(BaseModel):
 
     event_id: UUID | None = None
     outcome: ProcessingOutcome
-    error_code: str | None = Field(default=None, max_length=80)
+    error_code: str | None = Field(
+        default=None,
+        max_length=80,
+        pattern=r"^[A-Za-z0-9_.:-]+$",
+    )
     provider_reference: str | None = Field(default=None, max_length=200)
     retry_after_seconds: float | None = Field(default=None, ge=0, le=3600)
     deduplicated: bool = False

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -205,7 +206,7 @@ def test_celery_retry_wiring_schedules_bounded_redelivery(
         process_event.pop_request()
 
     assert retry_call["max_retries"] == 5
-    assert retry_call["countdown"] >= 11
+    assert cast(int, retry_call["countdown"]) >= 11
     assert retry_call["args"] == (envelope.model_dump(mode="json"),)
 
 

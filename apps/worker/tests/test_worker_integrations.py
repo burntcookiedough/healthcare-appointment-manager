@@ -1,0 +1,385 @@
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import Mapping
+from dataclasses import replace
+from datetime import UTC, date, datetime, time, timedelta
+from typing import Any
+from uuid import uuid4
+
+import pytest
+from pydantic import ValidationError
+
+from healthcare_worker.adapters import (
+    GoogleCalendarOAuthAdapter,
+    HttpClinicalLLMAdapter,
+    HttpResponse,
+    InMemoryTrustedDataResolver,
+    SendGridEmailAdapter,
+)
+from healthcare_worker.envelope import EventEnvelope
+from healthcare_worker.events import (
+    API_EVENT_TYPES,
+    EventType,
+    assert_supported_api_events,
+    translated_event_types,
+)
+from healthcare_worker.handlers import HandlerDependencies, build_default_registry
+from healthcare_worker.llm import InMemorySummaryRepository
+from healthcare_worker.outbox import InMemoryOutboxStore, OutboxPoller, OutboxRecord
+from healthcare_worker.ports import (
+    CalendarRequest,
+    ClinicalSummaryRequest,
+    EmailContent,
+    EmailRequest,
+    OAuthCredentials,
+    SummarySource,
+)
+from healthcare_worker.processor import process_envelope
+from healthcare_worker.reminders import (
+    InMemoryReminderOccurrenceStore,
+    MedicationReminderDispatcher,
+    MedicationReminderRequest,
+    PrescriptionSchedule,
+    generate_medication_occurrences,
+)
+from healthcare_worker.results import ProcessingOutcome, ProcessingResult
+from healthcare_worker.retry import RetryPolicy
+
+
+def envelope(event_type: str, payload: dict[str, Any]) -> EventEnvelope:
+    return EventEnvelope(
+        version=1,
+        event_id=uuid4(),
+        correlation_id=str(uuid4()),
+        aggregate_id=uuid4(),
+        event_type=event_type,
+        payload=payload,
+    )
+
+
+def test_api_event_contract_is_explicit_and_translated() -> None:
+    registry = build_default_registry()
+    assert registry.event_types >= API_EVENT_TYPES
+    assert translated_event_types(EventType.APPOINTMENT_CONFIRMED.value) == frozenset(
+        {EventType.EMAIL_NOTIFICATION.value, EventType.CALENDAR_SYNC.value}
+    )
+    assert translated_event_types(EventType.APPOINTMENT_CALENDAR_SYNC.value) == frozenset(
+        {EventType.CALENDAR_SYNC.value}
+    )
+    assert_supported_api_events(API_EVENT_TYPES)
+
+
+def test_appointment_confirmed_dispatches_email_and_calendar_projections() -> None:
+    from healthcare_worker.adapters import (
+        DeterministicFakeClinicalLLMAdapter,
+        DeterministicFakeEmailAdapter,
+        DeterministicFakeGoogleCalendarAdapter,
+    )
+
+    email = DeterministicFakeEmailAdapter()
+    calendar = DeterministicFakeGoogleCalendarAdapter()
+    dependencies = HandlerDependencies(
+        email=email,
+        calendar=calendar,
+        clinical_llm=DeterministicFakeClinicalLLMAdapter(),
+    )
+    item = envelope(
+        EventType.APPOINTMENT_CONFIRMED.value,
+        {
+            "appointment_id": str(uuid4()),
+            "channels": ["email", "calendar"],
+            "starts_at": "2026-08-24T10:00:00Z",
+            "ends_at": "2026-08-24T11:00:00Z",
+        },
+    )
+    result = process_envelope(
+        item,
+        registry=build_default_registry(dependencies),
+        deduplication=None,
+    )
+    assert result.is_success
+    assert [call.idempotency_key for call in email.calls] == [f"{item.event_id}:email"]
+    assert [call.idempotency_key for call in calendar.calls] == [f"{item.event_id}:calendar"]
+
+
+def test_outbox_poller_persists_retry_then_success_and_recovers_leases() -> None:
+    event_id = uuid4()
+    aggregate_id = uuid4()
+    record = OutboxRecord(
+        event_id=event_id,
+        event_type=EventType.EMAIL_NOTIFICATION.value,
+        aggregate_type="appointment",
+        aggregate_id=aggregate_id,
+        dedupe_key="notification:1",
+        payload={"template_key": "appointment_update"},
+    )
+    store = InMemoryOutboxStore([record])
+    outcomes = iter(
+        [
+            ProcessingResult.retryable(event_id, error_code="EMAIL_TEMPORARY"),
+            ProcessingResult.success(event_id, provider_reference="provider-1"),
+        ]
+    )
+    poller = OutboxPoller(
+        store,
+        lambda _: next(outcomes),
+        max_concurrency=2,
+        batch_size=2,
+        retry_policy=RetryPolicy(max_retries=2, base_delay_seconds=0.01, jitter_seconds=0),
+    )
+    first = asyncio.run(poller.poll_once())
+    assert first[0].outcome is ProcessingOutcome.RETRYABLE_FAILURE
+    assert store.records[event_id].attempt_count == 1
+    store.records[event_id] = replace(store.records[event_id], next_attempt_at=datetime.now(UTC))
+    second = asyncio.run(poller.poll_once())
+    assert second[0].is_success
+    assert store.records[event_id].status == "succeeded"
+    assert store.records[event_id].attempt_count == 2
+
+    recovered_id = uuid4()
+    recovered = OutboxRecord(
+        event_id=recovered_id,
+        event_type=EventType.EMAIL_NOTIFICATION.value,
+        aggregate_type="appointment",
+        aggregate_id=uuid4(),
+        dedupe_key="notification:recovered",
+        payload={"template_key": "appointment_update"},
+        status="processing",
+        attempt_count=1,
+        next_attempt_at=datetime.now(UTC) - timedelta(seconds=1),
+    )
+    recovery_store = InMemoryOutboxStore([recovered])
+    recovery_poller = OutboxPoller(
+        recovery_store,
+        lambda _: ProcessingResult.success(recovered_id),
+        max_concurrency=1,
+        batch_size=1,
+    )
+    asyncio.run(recovery_poller.poll_once())
+    assert recovery_poller.metrics.recovered == 1
+    assert recovery_store.records[recovered_id].attempt_count == 2
+    assert (
+        asyncio.run(recovery_store.mark_succeeded(recovered_id, attempt=1, provider_reference=None))
+        is False
+    )
+
+
+class FakeTransport:
+    def __init__(self, *responses: HttpResponse) -> None:
+        self.responses = list(responses)
+        self.requests: list[tuple[str, str, dict[str, str], bytes]] = []
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: Mapping[str, str],
+        body: bytes = b"",
+        timeout_seconds: float,
+    ) -> HttpResponse:
+        del timeout_seconds
+        self.requests.append((method, url, dict(headers), body))
+        return self.responses.pop(0)
+
+
+def test_sendgrid_calendar_adapters_are_mockable_and_fail_closed() -> None:
+    resolver = InMemoryTrustedDataResolver(
+        email={
+            "patient-ref": EmailContent(
+                recipient_email="synthetic@example.test",
+                subject="Appointment update",
+                text_body="Synthetic notification",
+            )
+        },
+        calendar_credentials={"default": OAuthCredentials(access_token="synthetic-token")},
+    )
+    email_transport = FakeTransport(HttpResponse(202, {}))
+    email_adapter = SendGridEmailAdapter(
+        api_key="synthetic-key",
+        from_email="worker@example.test",
+        resolver=resolver,
+        transport=email_transport,
+    )
+    email_result = email_adapter.send(
+        EmailRequest(template_key="appointment_update", recipient_reference="patient-ref"),
+        idempotency_key=str(uuid4()),
+    )
+    assert email_result.is_success
+    assert b"synthetic@example.test" in email_transport.requests[0][3]
+    assert (
+        SendGridEmailAdapter(api_key=None, from_email=None, resolver=None)
+        .send(
+            EmailRequest(template_key="appointment_update"),
+            idempotency_key="event",
+        )
+        .error_code
+        == "PROVIDER_NOT_CONFIGURED"
+    )
+
+    calendar_transport = FakeTransport(
+        HttpResponse(200, {}, b'{"id":"google-event-1"}'),
+        HttpResponse(200, {}, b'{"id":"google-event-1"}'),
+        HttpResponse(204, {}),
+    )
+    calendar_adapter = GoogleCalendarOAuthAdapter(
+        client_id="client",
+        client_secret="secret",
+        resolver=resolver,
+        transport=calendar_transport,
+    )
+    request = CalendarRequest(
+        appointment_id=uuid4(),
+        starts_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
+        ends_at=datetime(2026, 8, 24, 11, tzinfo=UTC),
+        action="create",
+    )
+    assert calendar_adapter.upsert_event(request, idempotency_key="event:calendar").is_success
+    updated = request.model_copy(
+        update={"action": "update", "provider_event_reference": "google-event-1"}
+    )
+    assert calendar_adapter.upsert_event(updated, idempotency_key="event:calendar").is_success
+    deleted = updated.model_copy(update={"action": "delete"})
+    assert calendar_adapter.upsert_event(deleted, idempotency_key="event:calendar").is_success
+    assert [request[0] for request in calendar_transport.requests] == ["POST", "PATCH", "DELETE"]
+
+
+def test_llm_structured_output_and_handler_persistence() -> None:
+    source_id = uuid4()
+    resolver = InMemoryTrustedDataResolver(
+        summaries={
+            str(source_id): SummarySource(
+                source_reference=source_id,
+                source_version=3,
+                source_text="Synthetic source text",
+            )
+        }
+    )
+    response = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "urgency": "Medium",
+                            "chief_complaint": "Synthetic concern",
+                            "suggested_questions": ["One?", "Two?", "Three?"],
+                        }
+                    )
+                }
+            }
+        ]
+    }
+    transport = FakeTransport(
+        HttpResponse(200, {}, json.dumps(response).encode()),
+        HttpResponse(200, {}, json.dumps(response).encode()),
+    )
+    adapter = HttpClinicalLLMAdapter(
+        endpoint="https://llm.example.test/v1/chat/completions",
+        api_key="synthetic-key",
+        provider="openai",
+        model="synthetic-model",
+        resolver=resolver,
+        transport=transport,
+    )
+    request = ClinicalSummaryRequest(
+        source_record_reference=source_id,
+        source_version=3,
+        task_kind="pre_visit",
+    )
+    result = adapter.generate_summary(request, idempotency_key="event:llm")
+    assert result.is_success
+    assert result.output and result.output["urgency"] == "Medium"
+
+    repo = InMemorySummaryRepository()
+    dependencies = HandlerDependencies(
+        email=SendGridEmailAdapter(api_key=None, from_email=None, resolver=None),
+        calendar=GoogleCalendarOAuthAdapter(client_id=None, client_secret=None, resolver=None),
+        clinical_llm=adapter,
+        summary_repository=repo,
+    )
+    processed = process_envelope(
+        envelope(EventType.CLINICAL_LLM_SUMMARY.value, request.model_dump(mode="json")),
+        registry=build_default_registry(dependencies),
+    )
+    assert processed.is_success
+    assert len(repo.records) == 1
+    assert repo.records[0].metadata.prompt_version == "clinical.v1"
+
+    invalid_transport = FakeTransport(
+        HttpResponse(200, {}, b'{"choices":[{"message":{"content":"{}"}}]}')
+    )
+    invalid_adapter = HttpClinicalLLMAdapter(
+        endpoint="https://llm.example.test/v1/chat/completions",
+        api_key="synthetic-key",
+        provider="openai",
+        model="synthetic-model",
+        resolver=resolver,
+        transport=invalid_transport,
+    )
+    assert (
+        invalid_adapter.generate_summary(request, idempotency_key="event:llm").error_code
+        == "LLM_INVALID_OUTPUT"
+    )
+
+
+def test_medication_reminders_are_timezone_aware_and_restart_safe() -> None:
+    prescription_id = uuid4()
+    schedule = PrescriptionSchedule(
+        prescription_id=prescription_id,
+        prescription_version=4,
+        medication_reference="medication-ref",
+        start_date=date(2026, 8, 24),
+        duration_days=2,
+        frequency="structured",
+        times_of_day=[time(8, 30), time(20, 30)],
+        time_zone="Asia/Kolkata",
+    )
+    occurrences = generate_medication_occurrences(schedule)
+    assert len(occurrences) == 4
+    assert occurrences[0].due_at.tzinfo is not None
+    assert occurrences[0].due_at.hour == 3
+    assert occurrences[0].due_at.minute == 0
+    assert [item.occurrence_id for item in occurrences] == [
+        item.occurrence_id for item in generate_medication_occurrences(schedule)
+    ]
+
+    from healthcare_worker.adapters import DeterministicFakeEmailAdapter
+
+    email = DeterministicFakeEmailAdapter()
+    superseded = schedule.model_copy(update={"prescription_version": 5})
+    resolver = InMemoryTrustedDataResolver(
+        prescriptions={
+            f"{prescription_id}:4": schedule,
+            f"{prescription_id}:5": superseded,
+        },
+    )
+    occurrence_store = InMemoryReminderOccurrenceStore()
+    dispatcher = MedicationReminderDispatcher(
+        resolver=resolver,
+        email=email,
+        occurrence_store=occurrence_store,
+    )
+    dispatcher.reconcile(schedule)
+    new_occurrences = dispatcher.reconcile(superseded)
+    assert occurrences[0].occurrence_id in occurrence_store.cancelled
+    request = MedicationReminderRequest(
+        prescription_id=prescription_id,
+        prescription_version=5,
+        occurrence_id=new_occurrences[0].occurrence_id,
+        recipient_reference="patient-ref",
+    )
+    assert dispatcher.dispatch(request, idempotency_key="event:occurrence").is_success
+    assert dispatcher.dispatch(request, idempotency_key="event:occurrence").is_success
+    assert len(email.calls) == 1
+
+
+def test_payload_boundary_rejects_nested_phi_and_provider_secrets() -> None:
+    for payload in (
+        {"template_key": "appointment_update", "nested": {"notes": "synthetic"}},
+        {"template_key": "appointment_update", "recipient": "synthetic@example.test"},
+    ):
+        with pytest.raises(ValidationError):
+            envelope(EventType.EMAIL_NOTIFICATION.value, payload)

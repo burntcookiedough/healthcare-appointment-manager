@@ -1,16 +1,12 @@
-"""Provider-neutral ports and safe request/result models.
-
-Real SendGrid, Google OAuth/Calendar, and LLM clients are intentionally absent in
-Phase 1.  These ports keep later adapters from changing handler semantics.
-"""
+"""Provider-neutral ports, trusted-reference resolution, and safe request models."""
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Literal, Protocol
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from .results import ProcessingOutcome
 
@@ -22,12 +18,39 @@ class AdapterResult(BaseModel):
 
     outcome: ProcessingOutcome
     provider_reference: str | None = Field(default=None, max_length=200)
-    error_code: str | None = Field(default=None, max_length=80)
+    error_code: str | None = Field(
+        default=None,
+        max_length=80,
+        pattern=r"^[A-Za-z0-9_.:-]+$",
+    )
     retry_after_seconds: float | None = Field(default=None, ge=0, le=3600)
+    # Structured LLM output is persisted through a repository by the handler;
+    # it is never logged or put back into the outbox payload.
+    output: dict[str, Any] | None = None
+    metadata: dict[str, str] | None = None
+
+    @property
+    def is_success(self) -> bool:
+        return self.outcome is ProcessingOutcome.SUCCEEDED
+
+    @property
+    def is_retryable(self) -> bool:
+        return self.outcome is ProcessingOutcome.RETRYABLE_FAILURE
 
     @classmethod
-    def success(cls, provider_reference: str | None = None) -> AdapterResult:
-        return cls(outcome=ProcessingOutcome.SUCCEEDED, provider_reference=provider_reference)
+    def success(
+        cls,
+        provider_reference: str | None = None,
+        *,
+        output: dict[str, Any] | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> AdapterResult:
+        return cls(
+            outcome=ProcessingOutcome.SUCCEEDED,
+            provider_reference=provider_reference,
+            output=output,
+            metadata=metadata,
+        )
 
     @classmethod
     def retryable(
@@ -51,9 +74,21 @@ class EmailRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    template_key: str = Field(default="appointment_update", min_length=1, max_length=80)
-    recipient_reference: str | None = Field(default=None, max_length=128)
+    template_key: str = Field(
+        default="appointment_update",
+        min_length=1,
+        max_length=80,
+        validation_alias=AliasChoices("template_key", "notification_key"),
+    )
+    recipient_reference: str | None = Field(
+        default=None,
+        max_length=128,
+        validation_alias=AliasChoices("recipient_reference", "recipient_ref"),
+    )
     appointment_id: UUID | None = None
+    prescription_id: UUID | None = None
+    occurrence_id: UUID | None = None
+    notification_reference: str | None = Field(default=None, max_length=128)
     locale: str = Field(default="en", min_length=2, max_length=16)
 
 
@@ -63,10 +98,26 @@ class CalendarRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     appointment_id: UUID | None = None
+    doctor_id: UUID | None = None
     starts_at: datetime | None = None
     ends_at: datetime | None = None
     time_zone: str | None = Field(default=None, max_length=64)
     event_label: str = Field(default="Healthcare appointment", max_length=80)
+    action: Literal["create", "update", "delete"] = Field(
+        default="create",
+        validation_alias=AliasChoices("action", "operation"),
+    )
+    calendar_reference: str | None = Field(
+        default=None,
+        max_length=128,
+        validation_alias=AliasChoices("calendar_reference", "calendar_id"),
+    )
+    provider_event_reference: str | None = Field(
+        default=None,
+        max_length=256,
+        validation_alias=AliasChoices("provider_event_reference", "calendar_event_id"),
+    )
+    credential_reference: str | None = Field(default=None, max_length=128)
 
 
 class ClinicalSummaryRequest(BaseModel):
@@ -74,9 +125,79 @@ class ClinicalSummaryRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    source_record_reference: UUID | None = None
+    source_record_reference: UUID | None = Field(
+        default=None,
+        validation_alias=AliasChoices("source_record_reference", "source_reference", "source_ref"),
+    )
     source_version: int | None = Field(default=None, ge=1)
-    task_kind: str = Field(default="plain_language_summary", min_length=1, max_length=80)
+    task_kind: Literal["pre_visit", "post_visit", "plain_language_summary"] = (
+        "plain_language_summary"
+    )
+    prompt_version: str = Field(default="clinical.v1", min_length=1, max_length=64)
+    schema_version: str = Field(default="clinical.v1", min_length=1, max_length=64)
+    credential_reference: str | None = Field(default=None, max_length=128)
+
+
+class EmailContent(BaseModel):
+    """Sensitive content resolved at execution time, never accepted in an event."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    recipient_email: str = Field(
+        min_length=3,
+        max_length=320,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+    )
+    subject: str = Field(min_length=1, max_length=200)
+    text_body: str = Field(min_length=1, max_length=100_000)
+    html_body: str | None = Field(default=None, max_length=300_000)
+
+
+class OAuthCredentials(BaseModel):
+    """Short-lived provider credentials obtained from a trusted server-side port."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    access_token: str = Field(
+        min_length=1,
+        max_length=10_000,
+        pattern=r"^[^\r\n]+$",
+        repr=False,
+    )
+    token_type: str = Field(
+        default="Bearer",
+        min_length=1,
+        max_length=32,
+        pattern=r"^[A-Za-z][A-Za-z0-9_-]*$",
+    )
+
+
+class SummarySource(BaseModel):
+    """Source text fetched by reference under the worker's trusted DB boundary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_reference: UUID
+    source_version: int = Field(ge=1)
+    source_text: str = Field(min_length=1, max_length=500_000, repr=False)
+
+
+class TrustedDataResolver(Protocol):
+    """Resolve PHI and credentials only after a validated event is claimed."""
+
+    def resolve_email(self, request: EmailRequest) -> EmailContent | None:
+        """Resolve a recipient and rendered template from an internal reference."""
+
+    def resolve_calendar_credentials(self, request: CalendarRequest) -> OAuthCredentials | None:
+        """Resolve an access token without placing it in an event or log."""
+
+    def resolve_summary_source(self, request: ClinicalSummaryRequest) -> SummarySource | None:
+        """Resolve source clinical text from a trusted reference."""
+
+    def resolve_prescription_schedule(
+        self, prescription_id: UUID, version: int | None
+    ) -> object | None:
+        """Resolve structured prescription fields for reminder generation."""
 
 
 class EmailPort(Protocol):
@@ -94,6 +215,13 @@ class ClinicalLLMPort(Protocol):
         self, request: ClinicalSummaryRequest, *, idempotency_key: str
     ) -> AdapterResult:
         """Generate optional derived content from a server-side source reference."""
+
+
+class SummaryRepository(Protocol):
+    """Persist validated derived output separately from immutable source records."""
+
+    def persist_summary(self, record: object) -> None:
+        """Persist a generated artifact or a safe failure state."""
 
 
 # Short alias for callers that do not need to spell out the provider.
