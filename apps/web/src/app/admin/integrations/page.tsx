@@ -15,10 +15,6 @@ import {
   Calendar,
   Sparkles,
   Pill,
-  CheckCircle2,
-  AlertTriangle,
-  Clock,
-  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -39,24 +35,21 @@ export default function AdminIntegrationsPage() {
       queryClient.invalidateQueries({ queryKey: ["admin-integrations-list"] });
       queryClient.invalidateQueries({ queryKey: ["admin-integrations-overview"] });
     },
-    onError: (err: any) => {
+    onError: (err: { error?: { message?: string } }) => {
       toast.error(err?.error?.message || "Failed to retry integration operation.");
     },
   });
 
   const items = integrations || [];
-  const succeededCount = items.filter((i) => i.state === "succeeded").length;
-  const retryingCount = items.filter((i) => i.state === "retrying").length;
-  const failedCount = items.filter((i) => i.state === "failed").length;
 
   return (
     <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
+          <h1 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
             Integration Health & Outbox Governance
-          </h2>
+          </h1>
           <p className="text-sm text-[#626262] mt-1">
             Monitor asynchronous delivery for email, calendar sync, LLM intakes, and SMS reminders (OUTBOX-001, OUTBOX-003).
           </p>

@@ -43,7 +43,7 @@ body {
 /* Subtle grid texture for calendar / scheduling aesthetic */
 .bg-grid-pattern {
   background-size: 32px 32px;
-  background-image: 
+  background-image:
     linear-gradient(to right, rgba(231, 231, 226, 0.45) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(231, 231, 226, 0.45) 1px, transparent 1px);
 }
@@ -92,7 +92,7 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  
+
   .animate-float-1,
   .animate-float-2,
   .animate-pulse-subtle {

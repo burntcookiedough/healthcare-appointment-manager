@@ -1,13 +1,11 @@
 import {
   DoctorDetail,
   PatientProfile,
-  AppointmentSummary,
   AppointmentDetail,
   Visit,
   DoctorLeave,
   AdminIntegrationItem,
   Prescription,
-  MedicationReminder,
 } from "@/types/api";
 
 export const MOCK_PATIENT: PatientProfile = {

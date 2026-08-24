@@ -5,7 +5,6 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
-import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/common/EmptyState";
 import { CardSkeleton } from "@/components/common/Skeleton";
 import { formatCurrencyINR } from "@/lib/utils";
@@ -17,8 +16,6 @@ import {
   Award,
   Calendar,
   ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
   AlertCircle,
 } from "lucide-react";
 
@@ -29,21 +26,23 @@ export default function DoctorDetailPage() {
   const router = useRouter();
   const doctorId = (params?.id as string) || "doc-001-rajesh";
 
-  const [selectedDate, setSelectedDate] = React.useState<Date>(() => new Date());
   const [selectedDuration, setSelectedDuration] = React.useState<number>(30);
+  const [selectedDate, setSelectedDate] = React.useState<Date>(() => new Date());
 
+  // Query Doctor Profile
   const { data: doctor, isLoading: isDocLoading, error: docError } = useQuery({
     queryKey: ["doctor-detail", doctorId],
     queryFn: () => apiClient.getDoctorDetail(doctorId),
   });
 
+  // Query Availability Slots
   const { data: slots, isLoading: isSlotsLoading } = useQuery({
-    queryKey: ["doctor-availability", doctorId, selectedDate.toISOString().split("T")[0], selectedDuration],
+    queryKey: ["doctor-slots", doctorId, selectedDate.toISOString().split("T")[0], selectedDuration],
     queryFn: () => apiClient.getDoctorAvailability(doctorId, selectedDate, selectedDuration),
     enabled: Boolean(doctor),
   });
 
-  // Next 7 days for quick date selection
+  // Next 7 days helper
   const availableDates = React.useMemo(() => {
     const list: Date[] = [];
     const base = new Date();
@@ -74,7 +73,7 @@ export default function DoctorDetailPage() {
       {/* Back Link */}
       <Link
         href="/patient/doctors"
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#626262] hover:text-[#111111] transition-colors"
+        className="inline-flex min-h-[44px] items-center gap-1.5 text-xs font-semibold text-[#626262] hover:text-[#111111] transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
         <span>Back to Specialist Directory</span>
@@ -89,7 +88,7 @@ export default function DoctorDetailPage() {
 
           <div className="space-y-2 flex-1">
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-2xl font-black text-[#111111]">{doctor.name}</h2>
+              <h1 className="text-2xl font-black text-[#111111]">{doctor.name}</h1>
               <span className="rounded-full bg-[#edfdf4] px-3 py-0.5 text-xs font-semibold text-[#1e613f]">
                 {doctor.specialization}
               </span>

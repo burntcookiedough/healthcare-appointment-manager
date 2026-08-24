@@ -13,12 +13,8 @@ import { CardSkeleton } from "@/components/common/Skeleton";
 import { formatTime, formatDate } from "@/lib/dates";
 import {
   Calendar,
-  Clock,
-  User,
   ArrowRight,
-  Stethoscope,
-  Activity,
-  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 
 export default function DoctorTimelinePage() {
@@ -32,25 +28,47 @@ export default function DoctorTimelinePage() {
   const inProgressCount = todayAppointments.filter((a) => a.status === "in_progress").length;
   const completedCount = todayAppointments.filter((a) => a.status === "completed").length;
 
+  if (error) {
+    return (
+      <EmptyState
+        icon={AlertCircle}
+        title="Could not load clinical timeline"
+        description="A network or server error occurred while retrieving today's consultation schedule."
+        actionLabel="Retry Loading"
+        onAction={() => window.location.reload()}
+      />
+    );
+  }
+
   return (
     <div className="space-y-8">
+      {/* Page Header with Semantic H1 */}
+      <div>
+        <h1 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
+          Today&apos;s Clinical Timeline
+        </h1>
+        <p className="text-xs sm:text-sm text-[#626262] mt-1">
+          {formatDate(new Date(), "EEEE, MMMM d, yyyy")} • Dr. Rajesh Verma (Cardiology)
+        </p>
+      </div>
+
       {/* Top Metric Strip */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 shadow-xs">
           <span className="text-xs font-semibold text-[#8e8e89] block">Total Queue Today</span>
-          <span className="text-2xl font-black text-[#111111]">{todayAppointments.length}</span>
+          <span className="text-2xl font-black text-[#111111]">{isLoading ? "..." : todayAppointments.length}</span>
         </div>
         <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 shadow-xs">
           <span className="text-xs font-semibold text-[#26734d] block">Confirmed Upcoming</span>
-          <span className="text-2xl font-black text-[#111111]">{confirmedCount}</span>
+          <span className="text-2xl font-black text-[#111111]">{isLoading ? "..." : confirmedCount}</span>
         </div>
         <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 shadow-xs">
           <span className="text-xs font-semibold text-[#9a6700] block">In Consultation</span>
-          <span className="text-2xl font-black text-[#111111]">{inProgressCount}</span>
+          <span className="text-2xl font-black text-[#111111]">{isLoading ? "..." : inProgressCount}</span>
         </div>
         <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 shadow-xs">
           <span className="text-xs font-semibold text-[#626262] block">Completed Visits</span>
-          <span className="text-2xl font-black text-[#111111]">{completedCount}</span>
+          <span className="text-2xl font-black text-[#111111]">{isLoading ? "..." : completedCount}</span>
         </div>
       </div>
 

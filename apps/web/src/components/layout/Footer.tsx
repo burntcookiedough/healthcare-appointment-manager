@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { ShieldCheck, Lock, Clock } from "lucide-react";
+import { Lock, Clock } from "lucide-react";
 
 export function Footer() {
   return (
@@ -9,7 +8,7 @@ export function Footer() {
           <div className="flex items-center gap-2">
             <span className="font-bold text-[#111111]">CareSync Healthcare Portal</span>
             <span>•</span>
-            <span>WCAG 2.2 AA Compliant</span>
+            <span>Designed toward WCAG 2.2 AA accessibility targets</span>
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-4 text-[11px]">

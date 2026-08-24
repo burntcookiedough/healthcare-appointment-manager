@@ -1,24 +1,16 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
-import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { EmptyState } from "@/components/common/EmptyState";
 import { CardSkeleton } from "@/components/common/Skeleton";
-import { formatDateTime, formatDate, formatTime } from "@/lib/dates";
-import { AppointmentStatus } from "@/types/api";
+import { formatDate, formatTime } from "@/lib/dates";
 import {
   Calendar,
   Search,
-  Filter,
-  User,
-  Stethoscope,
-  ArrowRight,
-  FileText,
 } from "lucide-react";
 
 export default function AdminAppointmentsPage() {
@@ -56,9 +48,9 @@ export default function AdminAppointmentsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
+          <h1 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
             Appointment Operations
-          </h2>
+          </h1>
           <p className="text-sm text-[#626262] mt-1">
             Global clinic appointment ledger with operational status and lifecycle tracking.
           </p>
@@ -81,8 +73,10 @@ export default function AdminAppointmentsPage() {
           {["all", "active", "completed", "cancelled"].map((st) => (
             <button
               key={st}
+              type="button"
               onClick={() => setStatusFilter(st)}
-              className={`rounded-full px-4 py-1.5 text-xs font-semibold capitalize transition-all ${
+              aria-pressed={statusFilter === st}
+              className={`min-h-[44px] rounded-full px-4 py-2 text-xs font-semibold capitalize transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                 statusFilter === st
                   ? "bg-[#111111] text-white"
                   : "border border-[#e7e7e2] bg-white text-[#626262] hover:border-[#111111]"

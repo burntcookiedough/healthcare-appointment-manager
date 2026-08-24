@@ -2,21 +2,11 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useAuth } from "@/features/auth/auth-context";
-import { cn } from "@/lib/utils";
-import { Calendar, User, Pill, Search, PlusCircle } from "lucide-react";
+import { PlusCircle } from "lucide-react";
 
 export default function PatientLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
   const { user } = useAuth();
-
-  const links = [
-    { href: "/patient", label: "Dashboard", icon: User },
-    { href: "/patient/doctors", label: "Find Doctors", icon: Search },
-    { href: "/patient/appointments", label: "My Appointments", icon: Calendar },
-    { href: "/patient/prescriptions", label: "Medication Reminders", icon: Pill },
-  ];
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-[#fbfbf8]">
@@ -30,9 +20,9 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
               </span>
               <span className="text-xs text-[#8e8e89]">ID: pat-001-aarav</span>
             </div>
-            <h1 className="mt-1 text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
-              Welcome back, {user?.display_name || "Aarav Sharma"}
-            </h1>
+            <div className="mt-1 text-xl sm:text-2xl font-bold tracking-tight text-[#111111]">
+              Patient: {user?.display_name || "Aarav Sharma"}
+            </div>
           </div>
 
           <div className="flex items-center gap-3">

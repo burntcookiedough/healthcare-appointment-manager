@@ -16,18 +16,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/Dialog";
-import { formatDateTime, formatDate, addDays } from "@/lib/dates";
-import { LeavePreviewResponse, DoctorDetail } from "@/types/api";
+import { formatDateTime, addDays } from "@/lib/dates";
+import { LeavePreviewResponse } from "@/types/api";
 import {
   CalendarOff,
   Plus,
-  AlertTriangle,
-  Calendar,
-  CheckCircle2,
   Clock,
   ShieldAlert,
   ArrowRight,
-  User,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -77,7 +73,7 @@ export default function AdminLeavePage() {
       setIsScheduleLeaveOpen(false);
       setIsPreviewDialogOpen(true);
     },
-    onError: (err: any) => {
+    onError: (err: { error?: { message?: string } }) => {
       toast.error(err?.error?.message || "Failed to generate leave impact preview.");
     },
   });
@@ -94,7 +90,7 @@ export default function AdminLeavePage() {
         previewResult.preview_token
       );
     },
-    onSuccess: (newLeave) => {
+    onSuccess: (_newLeave) => {
       toast.success(
         `Leave scheduled successfully. ${previewResult?.affected_appointments.length || 0} affected appointment(s) updated to cancelled_doctor_leave.`
       );
@@ -104,7 +100,7 @@ export default function AdminLeavePage() {
       queryClient.invalidateQueries({ queryKey: ["admin-appointments"] });
       queryClient.invalidateQueries({ queryKey: ["patient-appointments"] });
     },
-    onError: (err: any) => {
+    onError: (err: { error?: { message?: string } }) => {
       toast.error(err?.error?.message || "Failed to commit doctor leave.");
     },
   });
@@ -125,9 +121,9 @@ export default function AdminLeavePage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
+          <h1 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
             Doctor Leave Governance
-          </h2>
+          </h1>
           <p className="text-sm text-[#626262] mt-1">
             Schedule approved leaves with mandatory impact preview and transactional appointment cancellation (LEAVE-002, LEAVE-003).
           </p>

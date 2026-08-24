@@ -1,13 +1,11 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
-import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/common/EmptyState";
 import { CardSkeleton } from "@/components/common/Skeleton";
-import { Pill, Clock, CheckCircle2, AlertCircle, FileText, ArrowRight } from "lucide-react";
+import { Pill, Clock, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function PatientPrescriptionsPage() {
@@ -31,9 +29,9 @@ export default function PatientPrescriptionsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
+          <h1 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
             Medication Schedule & Prescriptions
-          </h2>
+          </h1>
           <p className="text-sm text-[#626262] mt-1">
             Deterministic reminder timeline derived directly from doctor-verified structured prescription data.
           </p>
@@ -52,7 +50,7 @@ export default function PatientPrescriptionsPage() {
 
       {/* Timeline Schedule Cards */}
       <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 sm:p-8 shadow-sm space-y-4">
-        <h3 className="text-base font-bold text-[#111111] mb-2">Today&apos;s Medication Timeline</h3>
+        <h2 className="text-base font-bold text-[#111111] mb-2">Today&apos;s Medication Timeline</h2>
 
         {isLoading ? (
           <div className="space-y-3">
@@ -84,9 +82,9 @@ export default function PatientPrescriptionsPage() {
                     </div>
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-base font-bold text-[#111111]">
+                        <h3 className="text-base font-bold text-[#111111]">
                           {rem.medication_name}
-                        </h4>
+                        </h3>
                         <span className="rounded-full bg-white border border-[#e7e7e2] px-2.5 py-0.5 text-xs font-mono font-bold text-[#111111]">
                           {rem.dosage}
                         </span>
@@ -105,8 +103,11 @@ export default function PatientPrescriptionsPage() {
                     </div>
 
                     <button
+                      type="button"
                       onClick={() => handleToggle(rem.id, rem.medication_name)}
-                      className={`h-9 px-4 rounded-full text-xs font-semibold transition-all ${
+                      aria-pressed={Boolean(isTaken)}
+                      aria-label={`Mark ${rem.medication_name} dose as ${isTaken ? "taken" : "pending"}`}
+                      className={`min-h-[44px] px-4 rounded-full text-xs font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                         isTaken
                           ? "bg-[#26734d] text-white hover:bg-[#1e613f]"
                           : "border border-[#e7e7e2] bg-white text-[#111111] hover:bg-[#f0f0eb]"

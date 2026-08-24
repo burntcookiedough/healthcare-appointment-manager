@@ -20,18 +20,16 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/Dialog";
-import { PrescriptionItem, Visit } from "@/types/api";
+import { PrescriptionItem } from "@/types/api";
 import {
   FileText,
   Pill,
   Plus,
   Trash2,
   CheckCircle2,
-  Clock,
   ArrowLeft,
   AlertCircle,
   Save,
-  Send,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -97,7 +95,7 @@ export default function DoctorVisitEditorPage() {
     setPrescriptionItems(prescriptionItems.filter((item) => item.id !== id));
   };
 
-  const handleItemChange = (id: string, field: keyof PrescriptionItem, val: any) => {
+  const handleItemChange = (id: string, field: keyof PrescriptionItem, val: string | number) => {
     setPrescriptionItems(
       prescriptionItems.map((item) => (item.id === id ? { ...item, [field]: val } : item))
     );
@@ -112,7 +110,7 @@ export default function DoctorVisitEditorPage() {
       toast.success("Visit draft saved.");
       queryClient.invalidateQueries({ queryKey: ["doctor-visit", visitId] });
     },
-    onError: (err: any) => {
+    onError: (err: { error?: { message?: string } }) => {
       toast.error(err?.error?.message || "Failed to save draft.");
     },
   });
@@ -129,7 +127,7 @@ export default function DoctorVisitEditorPage() {
       queryClient.invalidateQueries({ queryKey: ["doctor-appointments"] });
       router.push("/doctor");
     },
-    onError: (err: any) => {
+    onError: (err: { error?: { message?: string } }) => {
       toast.error(err?.error?.message || "Failed to finalize consultation.");
     },
   });
@@ -156,7 +154,7 @@ export default function DoctorVisitEditorPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <Link
           href={`/doctor/appointments/${visit.appointment_id}`}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#626262] hover:text-[#111111]"
+          className="inline-flex min-h-[44px] items-center gap-1.5 text-xs font-semibold text-[#626262] hover:text-[#111111]"
         >
           <ArrowLeft className="h-4 w-4" />
           <span>Back to Intake Brief</span>
@@ -195,7 +193,7 @@ export default function DoctorVisitEditorPage() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold text-[#111111]">Clinical Consultation Workspace</h2>
+                <h1 className="text-xl font-bold text-[#111111]">Clinical Consultation Workspace</h1>
                 <StatusBadge status={visit.status} size="sm" />
               </div>
               <p className="text-xs text-[#626262]">Visit Reference: {visit.id}</p>

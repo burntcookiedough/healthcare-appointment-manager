@@ -22,8 +22,6 @@ import {
   Search,
   Plus,
   Stethoscope,
-  Clock,
-  ShieldCheck,
   CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -61,9 +59,9 @@ export default function AdminDoctorsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
+          <h1 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
             Doctor Roster & Credentials
-          </h2>
+          </h1>
           <p className="text-sm text-[#626262] mt-1">
             Manage practicing clinicians, credentials, accepted durations, and consultation fees.
           </p>

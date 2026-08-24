@@ -6,9 +6,10 @@ export function createQueryClient() {
       queries: {
         staleTime: 1000 * 60 * 2, // 2 minutes
         refetchOnWindowFocus: false,
-        retry: (failureCount, error: any) => {
+        retry: (failureCount, error: unknown) => {
           // Do not retry 403 or validation failures
-          if (error?.status === 403 || error?.status === 404 || error?.status === 422) {
+          const errObj = error as { status?: number };
+          if (errObj?.status === 403 || errObj?.status === 404 || errObj?.status === 422) {
             return false;
           }
           return failureCount < 2;

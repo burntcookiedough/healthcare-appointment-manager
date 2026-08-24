@@ -14,11 +14,8 @@ import { CardSkeleton } from "@/components/common/Skeleton";
 import { formatDate, formatTime, formatDateTime } from "@/lib/dates";
 import {
   Stethoscope,
-  Clock,
   User,
   ArrowLeft,
-  ArrowRight,
-  Sparkles,
   FileText,
   AlertCircle,
   CheckCircle2,
@@ -46,7 +43,7 @@ export default function DoctorAppointmentWorkspacePage() {
     onSuccess: (visit) => {
       router.push(`/doctor/visits/${visit.id}`);
     },
-    onError: (err: any) => {
+    onError: (err: { error?: { message?: string } }) => {
       toast.error(err?.error?.message || "Failed to initialize clinical visit workspace.");
     },
   });
@@ -70,7 +67,7 @@ export default function DoctorAppointmentWorkspacePage() {
       {/* Back Link */}
       <Link
         href="/doctor"
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#626262] hover:text-[#111111]"
+        className="inline-flex min-h-[44px] items-center gap-1.5 text-xs font-semibold text-[#626262] hover:text-[#111111]"
       >
         <ArrowLeft className="h-4 w-4" />
         <span>Back to Today&apos;s Schedule</span>
@@ -85,9 +82,9 @@ export default function DoctorAppointmentWorkspacePage() {
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2.5">
-                <h2 className="text-2xl font-black text-[#111111]">
+                <h1 className="text-2xl font-black text-[#111111]">
                   {appointment.patient_name}
-                </h2>
+                </h1>
                 <span className="text-sm font-semibold text-[#626262]">
                   ({appointment.patient_age || 34} yrs • {appointment.patient_gender || "Male"})
                 </span>

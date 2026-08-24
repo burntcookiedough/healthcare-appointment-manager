@@ -8,16 +8,13 @@ import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { AiBadge } from "@/components/common/AiBadge";
 import {
-  Calendar,
   ArrowRight,
   ShieldCheck,
   User,
   Stethoscope,
   Clock,
-  Sparkles,
   Pill,
   CheckCircle2,
-  Lock,
 } from "lucide-react";
 
 export default function LandingPage() {
@@ -92,8 +89,8 @@ export default function LandingPage() {
                 <div className="text-xs text-[#626262]">Original Data Kept</div>
               </div>
               <div>
-                <div className="text-xl font-bold text-[#111111]">WCAG AA</div>
-                <div className="text-xs text-[#626262]">Accessible UI</div>
+                <div className="text-xl font-bold text-[#111111]">WCAG 2.2</div>
+                <div className="text-xs text-[#626262]">Target Standards</div>
               </div>
             </div>
           </div>

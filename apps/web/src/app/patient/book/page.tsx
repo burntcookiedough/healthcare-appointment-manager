@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
@@ -25,22 +25,22 @@ import {
 import { toast } from "sonner";
 
 function BookingWizardContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
-  const queryDoctorId = searchParams.get("doctor_id") || "doc-001-rajesh";
+  const queryDoctorId = searchParams.get("doctor_id") || "";
   const queryStartsAt = searchParams.get("starts_at");
   const queryDuration = Number(searchParams.get("duration") || 30);
 
   // Steps: 1: Doctor, 2: Slot, 3: Hold & Symptoms, 4: Confirmed
   const [currentStep, setCurrentStep] = React.useState<number>(() => {
-    return queryStartsAt ? 3 : 2;
+    if (queryStartsAt) return 3;
+    if (queryDoctorId) return 2;
+    return 1;
   });
 
   const [selectedDoctorId, setSelectedDoctorId] = React.useState<string>(queryDoctorId);
   const [selectedDate, setSelectedDate] = React.useState<Date>(() => new Date());
-  const [selectedStartsAt, setSelectedStartsAt] = React.useState<string | null>(queryStartsAt);
-  const [selectedDuration, setSelectedDuration] = React.useState<number>(queryDuration);
+  const selectedDuration = queryDuration;
 
   const [activeHold, setActiveHold] = React.useState<Hold | null>(null);
   const [isHoldExpired, setIsHoldExpired] = React.useState<boolean>(false);
@@ -95,11 +95,10 @@ function BookingWizardContent() {
     onSuccess: (hold) => {
       setActiveHold(hold);
       setIsHoldExpired(false);
-      setSelectedStartsAt(hold.starts_at);
       setCurrentStep(3);
       toast.success("Slot held for 5 minutes. Please describe your symptoms to confirm.");
     },
-    onError: (err: any) => {
+    onError: (err: { error?: { message?: string } }) => {
       const msg = err?.error?.message || "This slot is no longer available. Please choose another.";
       toast.error(msg);
     },
@@ -126,7 +125,7 @@ function BookingWizardContent() {
       setCurrentStep(4);
       toast.success("Appointment successfully confirmed!");
     },
-    onError: (err: any) => {
+    onError: (err: { error?: { message?: string; code?: string } }) => {
       const code = err?.error?.code;
       if (code === "HOLD_EXPIRED") {
         setIsHoldExpired(true);
@@ -160,6 +159,16 @@ function BookingWizardContent() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
+      {/* Page Heading */}
+      <div>
+        <h1 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
+          Book a Clinical Consultation
+        </h1>
+        <p className="text-xs sm:text-sm text-[#626262] mt-1">
+          Select a specialist doctor, acquire a temporary 5-minute hold on your preferred slot, and describe symptoms.
+        </p>
+      </div>
+
       {/* Wizard Progress Stepper */}
       <nav aria-label="Booking Steps" className="rounded-3xl border border-[#e7e7e2] bg-white p-4 sm:p-6 shadow-sm">
         <div className="flex items-center justify-between">
@@ -208,27 +217,30 @@ function BookingWizardContent() {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {doctors?.map((doc) => (
-              <div
+              <button
                 key={doc.id}
+                type="button"
                 onClick={() => {
                   setSelectedDoctorId(doc.id);
                   setCurrentStep(2);
                 }}
-                className={`p-4 rounded-2xl border transition-all cursor-pointer hover:border-[#111111] hover:shadow-md ${
+                aria-pressed={selectedDoctorId === doc.id}
+                aria-label={`Select ${doc.name}, ${doc.specialization}`}
+                className={`p-4 rounded-2xl border text-left transition-all hover:border-[#111111] hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] focus-visible:outline-offset-2 ${
                   selectedDoctorId === doc.id ? "border-[#111111] bg-[#fbfbf8]" : "border-[#e7e7e2] bg-white"
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#efff72] text-[#111111]">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#efff72] text-[#111111]" aria-hidden="true">
                     <Stethoscope className="h-5 w-5" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-[#111111]">{doc.name}</h4>
-                    <p className="text-xs text-[#26734d] font-semibold">{doc.specialization}</p>
-                    <p className="text-xs text-[#626262]">{formatCurrencyINR(doc.consultation_fee)}</p>
+                    <div className="text-sm font-bold text-[#111111]">{doc.name}</div>
+                    <div className="text-xs text-[#26734d] font-semibold">{doc.specialization}</div>
+                    <div className="text-xs text-[#626262]">{formatCurrencyINR(doc.consultation_fee)}</div>
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -239,7 +251,7 @@ function BookingWizardContent() {
         <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 sm:p-8 shadow-sm space-y-6">
           <div className="flex items-center justify-between border-b border-[#f0f0eb] pb-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#efff72] text-[#111111]">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#efff72] text-[#111111]" aria-hidden="true">
                 <Stethoscope className="h-5 w-5" />
               </div>
               <div>
@@ -248,8 +260,9 @@ function BookingWizardContent() {
               </div>
             </div>
             <button
+              type="button"
               onClick={() => setCurrentStep(1)}
-              className="text-xs font-semibold text-[#626262] hover:text-[#111111]"
+              className="flex min-h-[44px] items-center px-3 py-2 text-xs font-semibold text-[#626262] hover:text-[#111111] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] rounded-lg"
             >
               Change Doctor
             </button>
@@ -267,8 +280,11 @@ function BookingWizardContent() {
                 return (
                   <button
                     key={i}
+                    type="button"
                     onClick={() => setSelectedDate(d)}
-                    className={`flex flex-col items-center justify-center min-w-[85px] p-3 rounded-2xl border transition-all ${
+                    aria-pressed={isSelected}
+                    aria-label={`Date: ${formatDate(d, "EEE, d MMM")}`}
+                    className={`flex flex-col items-center justify-center min-h-[44px] min-w-[85px] p-3 rounded-2xl border transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                       isSelected
                         ? "border-[#111111] bg-[#111111] text-white"
                         : "border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111]"
@@ -302,9 +318,13 @@ function BookingWizardContent() {
                 {slots.map((slot, i) => (
                   <button
                     key={i}
+                    type="button"
                     disabled={!slot.available}
                     onClick={() => handleSlotSelect(slot.starts_at)}
-                    className={`flex flex-col items-center justify-center p-3.5 rounded-xl border text-center transition-all ${
+                    aria-label={`${formatSlotRange(slot.starts_at, slot.ends_at)}, ${
+                      slot.available ? "Available for hold reservation" : slot.conflict_reason || "Unavailable"
+                    }`}
+                    className={`flex flex-col items-center justify-center min-h-[44px] p-3.5 rounded-xl border text-center transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                       slot.available
                         ? "border-[#e7e7e2] bg-white hover:border-[#111111] hover:bg-[#efff72]/20 active:scale-98 cursor-pointer"
                         : "border-[#f0f0eb] bg-[#f6f6f2] text-[#8e8e89] cursor-not-allowed opacity-60"

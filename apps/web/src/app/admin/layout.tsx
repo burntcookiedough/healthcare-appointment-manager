@@ -3,10 +3,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuth } from "@/features/auth/auth-context";
 import { cn } from "@/lib/utils";
 import {
-  ShieldCheck,
   Users,
   CalendarOff,
   Activity,
@@ -16,7 +14,6 @@ import {
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user } = useAuth();
 
   const links = [
     { href: "/admin", label: "Overview & KPIs", icon: Activity },
@@ -38,9 +35,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </span>
               <span className="text-xs text-[#8e8e89]">Role: Clinic Administrator</span>
             </div>
-            <h1 className="mt-1 text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
+            <div className="mt-1 text-xl sm:text-2xl font-bold tracking-tight text-[#111111]">
               Clinic Operations & Governance
-            </h1>
+            </div>
           </div>
         </div>
 

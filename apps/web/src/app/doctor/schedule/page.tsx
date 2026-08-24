@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { CardSkeleton } from "@/components/common/Skeleton";
-import { formatDateTime, formatDate } from "@/lib/dates";
-import { Calendar, Clock, ArrowLeft, ShieldCheck, CheckCircle2 } from "lucide-react";
+import { formatDateTime } from "@/lib/dates";
+import { Clock, ArrowLeft } from "lucide-react";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -27,11 +27,21 @@ export default function DoctorSchedulePage() {
     <div className="mx-auto max-w-4xl space-y-8">
       <Link
         href="/doctor"
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#626262] hover:text-[#111111]"
+        className="inline-flex min-h-[44px] items-center gap-1.5 text-xs font-semibold text-[#626262] hover:text-[#111111]"
       >
         <ArrowLeft className="h-4 w-4" />
         <span>Back to Timeline</span>
       </Link>
+
+      {/* Page Header */}
+      <div>
+        <h1 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
+          Clinical Schedule & Approved Leave
+        </h1>
+        <p className="text-sm text-[#626262] mt-1">
+          Review recurring availability windows and recorded absence intervals.
+        </p>
+      </div>
 
       {/* Working Hours Schedule Card */}
       <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 sm:p-8 shadow-sm space-y-6">

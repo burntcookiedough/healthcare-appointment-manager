@@ -4,7 +4,6 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/features/auth/auth-context";
 import { UserRole } from "@/types/api";
-import { Button } from "@/components/ui/Button";
 import { User, Stethoscope, ShieldCheck, ArrowRight, Lock } from "lucide-react";
 
 export default function LoginPage() {
@@ -35,8 +34,9 @@ export default function LoginPage() {
 
         <div className="space-y-3 pt-2">
           <button
+            type="button"
             onClick={() => handleSelectRole("patient")}
-            className="flex w-full items-center justify-between p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-all text-left group"
+            className="flex min-h-[44px] w-full items-center justify-between p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-all text-left group focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111]"
           >
             <div className="flex items-center gap-3.5">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#edfdf4] text-[#26734d]">
@@ -51,8 +51,9 @@ export default function LoginPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => handleSelectRole("doctor")}
-            className="flex w-full items-center justify-between p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-all text-left group"
+            className="flex min-h-[44px] w-full items-center justify-between p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-all text-left group focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111]"
           >
             <div className="flex items-center gap-3.5">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#f6f6f2] text-[#111111]">
@@ -67,8 +68,9 @@ export default function LoginPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => handleSelectRole("admin")}
-            className="flex w-full items-center justify-between p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-all text-left group"
+            className="flex min-h-[44px] w-full items-center justify-between p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-all text-left group focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111]"
           >
             <div className="flex items-center gap-3.5">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fff8eb] text-[#b54708]">

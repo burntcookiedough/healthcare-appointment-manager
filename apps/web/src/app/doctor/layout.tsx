@@ -2,12 +2,10 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useAuth } from "@/features/auth/auth-context";
-import { Stethoscope, Calendar, Clock, UserCheck } from "lucide-react";
+import { Calendar } from "lucide-react";
 
 export default function DoctorLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
   const { user } = useAuth();
 
   return (
@@ -22,9 +20,9 @@ export default function DoctorLayout({ children }: { children: React.ReactNode }
               </span>
               <span className="text-xs text-[#8e8e89]">ID: doc-001-rajesh</span>
             </div>
-            <h1 className="mt-1 text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
-              {user?.display_name || "Dr. Rajesh Verma"} • Cardiology
-            </h1>
+            <div className="mt-1 text-xl sm:text-2xl font-bold tracking-tight text-[#111111]">
+              Clinician: {user?.display_name || "Dr. Rajesh Verma"} • Cardiology
+            </div>
           </div>
 
           <div className="flex items-center gap-3">

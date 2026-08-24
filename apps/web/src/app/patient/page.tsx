@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { CardSkeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
-import { formatDate, formatTime, formatDateTime } from "@/lib/dates";
+import { formatDate, formatTime } from "@/lib/dates";
 import {
   Calendar,
   Clock,
@@ -18,7 +18,6 @@ import {
   CheckCircle2,
   FileText,
   AlertCircle,
-  PlusCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,12 +39,6 @@ export default function PatientDashboard() {
   } = useQuery({
     queryKey: ["patient-reminders"],
     queryFn: () => apiClient.getPatientReminders("pat-001-aarav"),
-  });
-
-  // Query top doctors
-  const { data: doctors, isLoading: isDocsLoading } = useQuery({
-    queryKey: ["featured-doctors"],
-    queryFn: () => apiClient.getDoctors(),
   });
 
   const [takenDoses, setTakenDoses] = React.useState<Record<string, boolean>>({});
@@ -79,6 +72,15 @@ export default function PatientDashboard() {
 
   return (
     <div className="space-y-8">
+      {/* Page Header with Semantic H1 */}
+      <div>
+        <h1 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
+          Patient Care Dashboard
+        </h1>
+        <p className="text-xs sm:text-sm text-[#626262] mt-1">
+          Welcome back, Aarav. View your upcoming consultations, today&apos;s medication schedule, and care history.
+        </p>
+      </div>
       {/* 1. Upcoming Appointment Hero Banner */}
       <section aria-labelledby="upcoming-heading">
         <div className="flex items-center justify-between mb-4">

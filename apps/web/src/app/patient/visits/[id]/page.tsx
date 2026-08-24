@@ -10,15 +10,12 @@ import { AiBadge } from "@/components/common/AiBadge";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { EmptyState } from "@/components/common/EmptyState";
 import { CardSkeleton } from "@/components/common/Skeleton";
-import { formatDate, formatDateTime } from "@/lib/dates";
+import { formatDateTime } from "@/lib/dates";
 import {
   FileText,
-  Stethoscope,
   Pill,
   ArrowLeft,
   Download,
-  CheckCircle2,
-  Calendar,
   AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -52,7 +49,7 @@ export default function PatientVisitSummaryPage() {
       {/* Back Link */}
       <Link
         href="/patient/appointments"
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#626262] hover:text-[#111111]"
+        className="inline-flex min-h-[44px] items-center gap-1.5 text-xs font-semibold text-[#626262] hover:text-[#111111]"
       >
         <ArrowLeft className="h-4 w-4" />
         <span>Back to Appointments</span>
@@ -67,7 +64,7 @@ export default function PatientVisitSummaryPage() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold text-[#111111]">Consultation Summary & Notes</h2>
+                <h1 className="text-xl font-bold text-[#111111]">Consultation Summary & Notes</h1>
                 <StatusBadge status="completed" size="sm" />
               </div>
               <p className="text-xs text-[#626262] mt-0.5">

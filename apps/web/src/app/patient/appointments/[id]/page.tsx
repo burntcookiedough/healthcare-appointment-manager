@@ -20,15 +20,12 @@ import {
 } from "@/components/ui/Dialog";
 import { formatDate, formatTime, formatDateTime, formatSlotRange, addDays } from "@/lib/dates";
 import {
-  Calendar,
-  Clock,
   Stethoscope,
   ArrowLeft,
   FileText,
   AlertTriangle,
   RotateCcw,
   XCircle,
-  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -79,7 +76,7 @@ export default function PatientAppointmentDetailPage() {
       setIsCancelDialogOpen(false);
       toast.success("Appointment successfully cancelled.");
     },
-    onError: (err: any) => {
+    onError: (err: { error?: { message?: string } }) => {
       toast.error(err?.error?.message || "Failed to cancel appointment.");
     },
   });
@@ -96,7 +93,7 @@ export default function PatientAppointmentDetailPage() {
       setIsRescheduleDialogOpen(false);
       toast.success("Appointment successfully rescheduled.");
     },
-    onError: (err: any) => {
+    onError: (err: { error?: { message?: string } }) => {
       toast.error(err?.error?.message || "Failed to reschedule appointment.");
     },
   });
@@ -122,7 +119,7 @@ export default function PatientAppointmentDetailPage() {
       {/* Back navigation */}
       <Link
         href="/patient/appointments"
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#626262] hover:text-[#111111]"
+        className="inline-flex min-h-[44px] items-center gap-1.5 text-xs font-semibold text-[#626262] hover:text-[#111111]"
       >
         <ArrowLeft className="h-4 w-4" />
         <span>Back to My Appointments</span>
@@ -138,7 +135,7 @@ export default function PatientAppointmentDetailPage() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold text-[#111111]">{appointment.doctor_name}</h2>
+                <h1 className="text-xl font-bold text-[#111111]">{appointment.doctor_name}</h1>
                 <StatusBadge status={appointment.status} size="sm" />
               </div>
               <p className="text-sm text-[#626262]">{appointment.doctor_specialization}</p>

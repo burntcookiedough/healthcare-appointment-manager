@@ -29,7 +29,6 @@ import {
   MOCK_PRESCRIPTION,
 } from "./data/fixtures";
 import { scenarioManager } from "./scenarios";
-import { addDays, parseDate } from "@/lib/dates";
 
 /**
  * Deterministic In-Memory State Store implementing API_CONTRACT.md endpoints.
@@ -39,6 +38,8 @@ class MockDatabase {
   private doctors: DoctorDetail[] = JSON.parse(JSON.stringify(MOCK_DOCTORS));
   private appointments: AppointmentDetail[] = JSON.parse(JSON.stringify(MOCK_APPOINTMENTS));
   private holds: Map<string, Hold> = new Map();
+  /** In-memory store of issued leave preview tokens (LEAVE-002: single-use). */
+  private leavePreviewTokens: Map<string, { doctor_id: string; starts_at: string; ends_at: string; reason: string; schedule_version: number; issued_at: number }> = new Map();
   private visits: Map<string, Visit> = new Map([["vis-001-completed", JSON.parse(JSON.stringify(MOCK_VISIT))]]);
   private prescriptions: Map<string, Prescription> = new Map([["rx-001-aarav", JSON.parse(JSON.stringify(MOCK_PRESCRIPTION))]]);
   private leaves: DoctorLeave[] = JSON.parse(JSON.stringify(MOCK_LEAVES));
@@ -723,6 +724,14 @@ class MockDatabase {
 
   public async previewDoctorLeave(doctorId: string, req: LeavePreviewRequest): Promise<LeavePreviewResponse> {
     await this.simulateNetwork();
+    const doc = this.doctors.find((d) => d.id === doctorId);
+    if (!doc) {
+      throw {
+        status: 404,
+        error: { code: "RESOURCE_NOT_FOUND", message: "Doctor not found" },
+      };
+    }
+
     const lStart = new Date(req.starts_at);
     const lEnd = new Date(req.ends_at);
 
@@ -743,6 +752,17 @@ class MockDatabase {
     });
 
     const previewToken = `prev-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const scheduleVersion = 1;
+
+    // Store token for single-use enforcement (LEAVE-002)
+    this.leavePreviewTokens.set(previewToken, {
+      doctor_id: doctorId,
+      starts_at: req.starts_at,
+      ends_at: req.ends_at,
+      reason: req.reason,
+      schedule_version: scheduleVersion,
+      issued_at: Date.now(),
+    });
 
     return {
       preview_token: previewToken,
@@ -751,7 +771,7 @@ class MockDatabase {
       ends_at: req.ends_at,
       affected_holds_count: affectedHolds.length,
       affected_appointments: affectedAppointments,
-      schedule_version: 1,
+      schedule_version: scheduleVersion,
     };
   }
 
@@ -760,9 +780,56 @@ class MockDatabase {
     startsAt: string,
     endsAt: string,
     reason: string,
-    _previewToken: string
+    previewToken: string
   ): Promise<DoctorLeave> {
     await this.simulateNetwork();
+
+    // Validate and consume preview token (LEAVE-002 single-use, 15-minute TTL)
+    const tokenMeta = this.leavePreviewTokens.get(previewToken);
+    if (!tokenMeta) {
+      throw {
+        status: 409,
+        error: {
+          code: "LEAVE_PREVIEW_STALE",
+          message:
+            "The leave preview token is invalid or has already been used. Please generate a new impact preview.",
+          retryable: false,
+        },
+      };
+    }
+    const TOKEN_TTL_MS = 15 * 60 * 1000;
+    if (Date.now() - tokenMeta.issued_at > TOKEN_TTL_MS) {
+      this.leavePreviewTokens.delete(previewToken);
+      throw {
+        status: 409,
+        error: {
+          code: "LEAVE_PREVIEW_STALE",
+          message:
+            "The leave preview token has expired (15-minute TTL). Please generate a new impact preview.",
+          retryable: false,
+        },
+      };
+    }
+    if (
+      tokenMeta.doctor_id !== doctorId ||
+      tokenMeta.starts_at !== startsAt ||
+      tokenMeta.ends_at !== endsAt
+    ) {
+      this.leavePreviewTokens.delete(previewToken);
+      throw {
+        status: 409,
+        error: {
+          code: "LEAVE_PREVIEW_STALE",
+          message:
+            "The leave parameters do not match the preview token. Please generate a new impact preview.",
+          retryable: false,
+        },
+      };
+    }
+
+    // Consume the token — single-use, delete before mutations (atomic integrity)
+    this.leavePreviewTokens.delete(previewToken);
+
     const doc = this.doctors.find((d) => d.id === doctorId);
     const lStart = new Date(startsAt);
     const lEnd = new Date(endsAt);
@@ -789,10 +856,10 @@ class MockDatabase {
             apt.version += 1;
             apt.updated_at = new Date().toISOString();
 
-            // Record outbox email notification event
+            // Record outbox email notification event (AT-LEAVE-002)
             this.integrations.unshift({
-              id: `int-leave-${Date.now()}`,
-              operation_id: `op-leave-cancel-${apt.id}`,
+              id: `int-leave-email-${Date.now()}-${apt.id}`,
+              operation_id: `op-leave-email-${apt.id}`,
               channel: "email",
               state: "succeeded",
               target_id: apt.id,
@@ -802,6 +869,21 @@ class MockDatabase {
               created_at: new Date().toISOString(),
               last_attempt_at: new Date().toISOString(),
               payload_summary: `Cancellation notification sent to ${apt.patient_name} due to doctor leave`,
+            });
+
+            // Record outbox calendar cancellation event (AT-LEAVE-002)
+            this.integrations.unshift({
+              id: `int-leave-cal-${Date.now()}-${apt.id}`,
+              operation_id: `op-leave-cal-${apt.id}`,
+              channel: "calendar",
+              state: "succeeded",
+              target_id: apt.id,
+              target_type: "appointment",
+              attempt_count: 1,
+              max_attempts: 3,
+              created_at: new Date().toISOString(),
+              last_attempt_at: new Date().toISOString(),
+              payload_summary: `Calendar cancellation event synced for ${apt.patient_name}`,
             });
           }
         }

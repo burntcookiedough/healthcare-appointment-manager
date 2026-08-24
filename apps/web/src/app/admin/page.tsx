@@ -5,18 +5,12 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { Button } from "@/components/ui/Button";
-import { StatusBadge } from "@/components/common/StatusBadge";
-import { CardSkeleton } from "@/components/common/Skeleton";
 import {
   Users,
   Calendar,
-  AlertTriangle,
   Layers,
   ArrowRight,
-  ShieldCheck,
   CalendarOff,
-  Activity,
-  CheckCircle2,
 } from "lucide-react";
 import {
   BarChart,
@@ -45,22 +39,22 @@ const PIE_DATA = [
 ];
 
 export default function AdminOverviewPage() {
-  const { data: doctors, isLoading: isDocsLoading } = useQuery({
+  const { data: doctors, isLoading: isDocsLoading, isError: isDocsError } = useQuery({
     queryKey: ["admin-doctors"],
     queryFn: () => apiClient.getDoctors(),
   });
 
-  const { data: appointments, isLoading: isApptsLoading } = useQuery({
+  const { data: appointments, isLoading: isApptsLoading, isError: isApptsError } = useQuery({
     queryKey: ["admin-appointments"],
     queryFn: () => apiClient.getAppointments("admin"),
   });
 
-  const { data: integrations, isLoading: isIntegrationsLoading } = useQuery({
+  const { data: integrations, isLoading: isIntegrationsLoading, isError: isIntegrationsError } = useQuery({
     queryKey: ["admin-integrations-overview"],
     queryFn: () => apiClient.getAdminIntegrations(),
   });
 
-  const { data: leaves, isLoading: isLeavesLoading } = useQuery({
+  const { data: leaves, isLoading: isLeavesLoading, isError: isLeavesError } = useQuery({
     queryKey: ["admin-leaves"],
     queryFn: () => apiClient.getDoctorLeaves(),
   });
@@ -69,52 +63,90 @@ export default function AdminOverviewPage() {
 
   return (
     <div className="space-y-8">
+      {/* Page Header with Semantic H1 */}
+      <div>
+        <h1 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
+          Clinical Operations Overview
+        </h1>
+        <p className="text-sm text-[#626262] mt-1">
+          Real-time system telemetry, active doctor rosters, consultation loads, and outbox integration health.
+        </p>
+      </div>
+
       {/* Metric Cards Row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Card 1: Doctors */}
         <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#8e8e89]">Total Doctors</span>
-            <Users className="h-4 w-4 text-[#111111]" />
+            <Users className="h-4 w-4 text-[#111111]" aria-hidden="true" />
           </div>
           <span className="text-3xl font-black text-[#111111] block">
-            {doctors?.length || 5}
+            {isDocsLoading ? "..." : isDocsError ? "—" : (doctors?.length ?? 0)}
           </span>
-          <span className="text-[11px] text-[#26734d] font-semibold">100% active roster</span>
+          <span className="text-[11px] font-semibold text-[#626262]">
+            {isDocsLoading
+              ? "Loading roster..."
+              : isDocsError
+              ? "Roster query failed"
+              : `${doctors?.length || 0} active doctors`}
+          </span>
         </div>
 
+        {/* Card 2: Appointments */}
         <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#8e8e89]">Appointments Today</span>
-            <Calendar className="h-4 w-4 text-[#111111]" />
+            <Calendar className="h-4 w-4 text-[#111111]" aria-hidden="true" />
           </div>
           <span className="text-3xl font-black text-[#111111] block">
-            {appointments?.length || 4}
+            {isApptsLoading ? "..." : isApptsError ? "—" : (appointments?.length ?? 0)}
           </span>
-          <span className="text-[11px] text-[#626262]">Across all specialties</span>
+          <span className="text-[11px] text-[#626262]">
+            {isApptsLoading
+              ? "Loading appointments..."
+              : isApptsError
+              ? "Appointments unavailable"
+              : "Across all specialties"}
+          </span>
         </div>
 
+        {/* Card 3: Integrations */}
         <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-[#8e8e89]">Integration Health</span>
-            <Layers className="h-4 w-4 text-[#b54708]" />
+            <span className="text-xs font-semibold text-[#8e8e89]">Integration Failures</span>
+            <Layers className="h-4 w-4 text-[#b54708]" aria-hidden="true" />
           </div>
           <span className="text-3xl font-black text-[#b42318] block">
-            {failedIntegrations.length}
+            {isIntegrationsLoading ? "..." : isIntegrationsError ? "—" : failedIntegrations.length}
           </span>
-          <span className="text-[11px] text-[#b42318] font-semibold">
-            {failedIntegrations.length > 0 ? "Requires manual retry" : "All channels synced"}
+          <span className="text-[11px] font-semibold text-[#626262]">
+            {isIntegrationsLoading
+              ? "Checking outbox..."
+              : isIntegrationsError
+              ? "Integration status unavailable"
+              : failedIntegrations.length > 0
+              ? `${failedIntegrations.length} failed — requires retry`
+              : "All channels operational"}
           </span>
         </div>
 
+        {/* Card 4: Leaves */}
         <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#8e8e89]">Active Leaves</span>
-            <CalendarOff className="h-4 w-4 text-[#111111]" />
+            <CalendarOff className="h-4 w-4 text-[#111111]" aria-hidden="true" />
           </div>
           <span className="text-3xl font-black text-[#111111] block">
-            {leaves?.length || 2}
+            {isLeavesLoading ? "..." : isLeavesError ? "—" : (leaves?.length ?? 0)}
           </span>
-          <span className="text-[11px] text-[#626262]">Approved doctor intervals</span>
+          <span className="text-[11px] text-[#626262]">
+            {isLeavesLoading
+              ? "Loading leave records..."
+              : isLeavesError
+              ? "Leave records unavailable"
+              : "Approved doctor intervals"}
+          </span>
         </div>
       </div>
 

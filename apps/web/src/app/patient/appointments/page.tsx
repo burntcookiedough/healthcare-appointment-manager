@@ -38,14 +38,26 @@ export default function PatientAppointmentsPage() {
     }
   }, [appointments, activeTab]);
 
+  if (error) {
+    return (
+      <EmptyState
+        icon={AlertCircle}
+        title="Could not load your appointments"
+        description="A network or server error occurred while retrieving your scheduled consultations."
+        actionLabel="Retry Loading"
+        onAction={() => window.location.reload()}
+      />
+    );
+  }
+
   return (
     <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
+          <h1 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
             My Appointments
-          </h2>
+          </h1>
           <p className="text-sm text-[#626262] mt-1">
             Review active consultations, reschedule, or view completed visit summaries.
           </p>
