@@ -22,7 +22,7 @@ function createTestQueryClient() {
 
 describe("Doctor Fixture Fallback Removal Suite (Admin Leave & Doctor Detail)", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
     apiClient.reset();
   });
 
@@ -123,7 +123,7 @@ describe("Doctor Fixture Fallback Removal Suite (Admin Leave & Doctor Detail)", 
         },
       ];
 
-      vi.spyOn(apiClient, "getDoctors").mockResolvedValue(mockDocs);
+      const getDoctorsSpy = vi.spyOn(apiClient, "getDoctors").mockResolvedValue(mockDocs);
 
       const user = userEvent.setup();
       const qc = createTestQueryClient();
@@ -146,7 +146,8 @@ describe("Doctor Fixture Fallback Removal Suite (Admin Leave & Doctor Detail)", 
       expect(selectElement.value).toBe("doc-102");
 
       // Invalidate queries to simulate refetch
-      qc.invalidateQueries({ queryKey: ["admin-leave-doctors"] });
+      await qc.invalidateQueries({ queryKey: ["admin-leave-doctors"] });
+      expect(getDoctorsSpy).toHaveBeenCalledTimes(2);
 
       // Selection must remain doc-102
       await waitFor(() => {

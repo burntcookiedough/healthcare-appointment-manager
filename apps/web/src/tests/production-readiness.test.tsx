@@ -6,6 +6,7 @@ import {
   formatDate,
   formatTime,
   formatDateOnly,
+  formatRelative,
   parseLocalISTToUTCISO,
   isTodayInTimezone,
 } from "@/lib/dates";
@@ -54,6 +55,10 @@ describe("Production Readiness & Contract Compliance Suite", () => {
 
       const yesterday = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
       expect(isTodayInTimezone(yesterday)).toBe(false);
+    });
+
+    it("keeps an invalid relative date human-readable instead of returning NaN", () => {
+      expect(formatRelative("not-a-date")).toBe("not-a-date");
     });
 
     it("generates doctor availability slots in Asia/Kolkata working hours without appending .000Z", async () => {

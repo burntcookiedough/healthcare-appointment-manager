@@ -91,6 +91,7 @@ describe("HoldCountdownBadge Component", () => {
     expect(screen.queryByText("Slot Hold Expired")).not.toBeInTheDocument();
     expect(screen.getByText("5:00")).toBeInTheDocument();
     expect(screen.getByText(/Slot held for:/)).toBeInTheDocument();
+    expect(onExpireMock).toHaveBeenCalledTimes(1);
   });
 
   it("fires onExpire only once per expiry transition", () => {

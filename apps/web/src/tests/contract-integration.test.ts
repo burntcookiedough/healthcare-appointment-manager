@@ -524,4 +524,94 @@ describe("FastAPI Contract Integration & Wire Accuracy Suite", () => {
     const retryBody = JSON.parse(mockFetch.mock.calls[1][1].body);
     expect(retryBody).toEqual({ expected_version: 1 });
   });
+
+  it("14. production reminders use completed visits and the supported reminder schedule route", async () => {
+    vi.useFakeTimers({ now: new Date("2026-08-24T12:00:00.000Z") });
+    setApiAuthToken("valid-token");
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        items: [{ id: "apt-1", version: 1, patient_id: "pat-1", doctor_id: "doc-1", starts_at: "2026-08-20T03:30:00Z", ends_at: "2026-08-20T04:00:00Z", status: "completed", created_at: "2026-08-19T00:00:00Z", updated_at: "2026-08-20T04:00:00Z" }],
+        next_cursor: null,
+      }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        patient_id: "pat-1",
+        version: 1,
+        enabled: true,
+        channel: "email",
+        timezone: "Asia/Kolkata",
+        local_times: ["08:00:00"],
+        created_at: "2026-08-19T00:00:00Z",
+        updated_at: "2026-08-19T00:00:00Z",
+      }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: "visit-1",
+        appointment_id: "apt-1",
+        doctor_id: "doc-1",
+        status: "completed",
+        version: 2,
+        prescription: {
+          id: "rx-1",
+          version: 1,
+          status: "completed",
+          items: [{
+            id: "rx-item-1",
+            medication_name: "Metformin",
+            dosage: "500 mg",
+            route: "oral",
+            frequency: "once_daily",
+            start_date: "2026-08-20",
+            instructions: "Take with breakfast",
+          }],
+        },
+        generated_artifacts: [],
+        created_at: "2026-08-20T04:00:00Z",
+        updated_at: "2026-08-20T04:00:00Z",
+        completed_at: "2026-08-20T04:00:00Z",
+      }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        prescription_id: "rx-1",
+        items: [{
+          prescription_item_id: "rx-item-1",
+          occurrence_at: "2026-08-24T03:30:00.000Z",
+          status: "pending",
+          prescription_version: 1,
+        }],
+      }),
+    });
+
+    try {
+      const reminders = await apiClient.getPatientReminders("pat-1");
+
+      expect(reminders).toEqual([
+        expect.objectContaining({
+          prescription_item_id: "rx-item-1",
+          medication_name: "Metformin",
+          time_of_day: "9:00 AM",
+          scheduled_date: "2026-08-24",
+        }),
+      ]);
+      expect(mockFetch.mock.calls.map(([url]) => url)).not.toContain(
+        "http://127.0.0.1:8000/api/v1/prescriptions/reminders"
+      );
+      expect(mockFetch.mock.calls[3][0]).toBe(
+        "http://127.0.0.1:8000/api/v1/prescriptions/rx-1/reminder-schedule?limit=365"
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

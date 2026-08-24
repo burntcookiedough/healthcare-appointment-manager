@@ -12,6 +12,7 @@ import {
   ArrowRight,
   CalendarOff,
 } from "lucide-react";
+import { isTodayInTimezone } from "@/lib/dates";
 import {
   BarChart,
   Bar,
@@ -46,6 +47,10 @@ export default function AdminOverviewPage() {
   });
 
   const failedIntegrations = integrations?.filter((i) => i.state === "failed") || [];
+  const todayAppointments = React.useMemo(
+    () => appointments?.filter((appointment) => isTodayInTimezone(appointment.starts_at, "Asia/Kolkata")) || [],
+    [appointments]
+  );
 
   const pieData = React.useMemo(() => {
     if (!integrations || integrations.length === 0) {
@@ -68,6 +73,7 @@ export default function AdminOverviewPage() {
   const succeededCount = integrations?.filter((i) => i.state === "succeeded").length || 0;
   const retryingCount = integrations?.filter((i) => i.state === "retrying").length || 0;
   const failedCount = integrations?.filter((i) => i.state === "failed").length || 0;
+  const pendingCount = integrations?.filter((i) => i.state === "pending").length || 0;
 
   const chartData = React.useMemo(() => {
     const buckets: Record<string, { confirmed: number; in_progress: number }> = {
@@ -78,8 +84,8 @@ export default function AdminOverviewPage() {
       "17:00": { confirmed: 0, in_progress: 0 },
     };
 
-    if (appointments && appointments.length > 0) {
-      appointments.forEach((apt) => {
+    if (todayAppointments.length > 0) {
+      todayAppointments.forEach((apt) => {
         try {
           const d = new Date(apt.starts_at);
           const hourStr = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", hour: "numeric", hour12: false }).format(d);
@@ -107,7 +113,7 @@ export default function AdminOverviewPage() {
       confirmed: counts.confirmed,
       in_progress: counts.in_progress,
     }));
-  }, [appointments]);
+  }, [todayAppointments]);
 
   return (
     <div className="space-y-8">
@@ -148,7 +154,7 @@ export default function AdminOverviewPage() {
             <Calendar className="h-4 w-4 text-[#111111]" aria-hidden="true" />
           </div>
           <span className="text-3xl font-black text-[#111111] block">
-            {isApptsLoading ? "…" : isApptsError ? "—" : (appointments?.length ?? 0)}
+            {isApptsLoading ? "…" : isApptsError ? "—" : todayAppointments.length}
           </span>
           <span className="text-[11px] text-[#626262]">
             {isApptsLoading
@@ -307,6 +313,15 @@ export default function AdminOverviewPage() {
               </span>
               <span className="font-bold text-[#111111]">
                 {totalIntegrations > 0 ? Math.round((failedCount / totalIntegrations) * 100) : 0}%
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#666861]" />
+                <span>Pending</span>
+              </span>
+              <span className="font-bold text-[#111111]">
+                {totalIntegrations > 0 ? Math.round((pendingCount / totalIntegrations) * 100) : 0}%
               </span>
             </div>
           </div>

@@ -83,6 +83,8 @@ function BookingWizardContent() {
     return arr;
   }, []);
 
+  const acquiredHoldKeyRef = React.useRef<string | null>(null);
+
   // Mutation: Acquire Hold
   const holdMutation = useMutation({
     mutationFn: async (startsAt: string) => {
@@ -99,12 +101,12 @@ function BookingWizardContent() {
       toast.success("Slot held for 5 minutes. Please describe your symptoms to confirm.");
     },
     onError: (err: { error?: { message?: string } }) => {
+      acquiredHoldKeyRef.current = null;
+      setCurrentStep(selectedDoctorId ? 2 : 1);
       const msg = err?.error?.message || "This slot is no longer available. Please choose another.";
       toast.error(msg);
     },
   });
-
-  const acquiredHoldKeyRef = React.useRef<string | null>(null);
 
   // Auto-acquire hold if arriving with starts_at query param (protected against StrictMode duplicate mounts)
   React.useEffect(() => {

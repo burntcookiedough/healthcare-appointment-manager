@@ -84,7 +84,7 @@ export default function PatientDashboard() {
           Patient Care Dashboard
         </h1>
         <p className="text-xs sm:text-sm text-[#626262] mt-1">
-          Welcome back, {user?.display_name || "Aarav"}. View your upcoming consultations, today&apos;s medication schedule, and care history.
+          Welcome back, {user?.display_name || "there"}. View your upcoming consultations, today&apos;s medication schedule, and care history.
         </p>
       </div>
       {/* 1. Upcoming Appointment Hero Banner */}

@@ -122,6 +122,7 @@ export function formatDateTime(
 export function formatRelative(dateInput: string | Date): string {
   try {
     const d = parseDate(dateInput);
+    if (isNaN(d.getTime())) return String(dateInput);
     const now = new Date();
     const diffSec = Math.round((d.getTime() - now.getTime()) / 1000);
     const absDiff = Math.abs(diffSec);
@@ -160,13 +161,18 @@ export function formatDateOnly(dateInput: string | Date, timeZone = APP_TIMEZONE
     const d = parseDate(dateInput);
     if (isNaN(d.getTime())) return String(dateInput);
 
-    const formatter = new Intl.DateTimeFormat("en-CA", {
+    const formatter = new Intl.DateTimeFormat("en-US", {
       timeZone,
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
     });
-    return formatter.format(d); // "YYYY-MM-DD"
+    const parts = formatter.formatToParts(d);
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    const day = parts.find((part) => part.type === "day")?.value;
+    if (!year || !month || !day) return String(dateInput);
+    return `${year}-${month}-${day}`;
   } catch {
     return String(dateInput);
   }

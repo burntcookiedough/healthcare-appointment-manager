@@ -29,6 +29,12 @@ export interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function isAuthenticationFailure(error: unknown): boolean {
+  const typedError = error as { status?: unknown; name?: unknown };
+  if (typedError?.status === 401) return true;
+  return typedError?.name === "SupabaseAuthError" && typeof typedError.status === "number" && typedError.status < 500;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserContext | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,10 +65,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setApiAuthToken(activeSession.access_token);
       const me = await apiClient.getMe();
       setUser(me);
-    } catch {
-      clearStoredSession();
-      setApiAuthToken(null);
-      setUser(null);
+    } catch (err) {
+      if (isAuthenticationFailure(err)) {
+        clearStoredSession();
+        setApiAuthToken(null);
+        setUser(null);
+      } else {
+        setUser(null);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -124,9 +134,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(me);
       return me;
     } catch (err) {
-      clearStoredSession();
-      setApiAuthToken(null);
-      setUser(null);
+      if (isAuthenticationFailure(err)) {
+        clearStoredSession();
+        setApiAuthToken(null);
+        setUser(null);
+      } else {
+        setUser(null);
+      }
       throw err;
     } finally {
       setIsLoading(false);
@@ -156,9 +170,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       return { requiresConfirmation: Boolean(result.requiresConfirmation) };
     } catch (err) {
-      clearStoredSession();
-      setApiAuthToken(null);
-      setUser(null);
+      if (isAuthenticationFailure(err)) {
+        clearStoredSession();
+        setApiAuthToken(null);
+        setUser(null);
+      } else {
+        setUser(null);
+      }
       throw err;
     } finally {
       setIsLoading(false);

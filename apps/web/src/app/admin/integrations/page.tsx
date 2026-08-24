@@ -61,6 +61,7 @@ export default function AdminIntegrationsPage() {
       const channelItems = items.filter((i) => i.channel === ch.key);
       const hasFailed = channelItems.some((i) => i.state === "failed");
       const hasRetrying = channelItems.some((i) => i.state === "retrying");
+      const hasPending = channelItems.some((i) => i.state === "pending");
 
       let status = "Operational";
       let statusClass = "text-[#111111]";
@@ -78,6 +79,12 @@ export default function AdminIntegrationsPage() {
         statusClass = "text-[#b54708]";
         dotClass = "bg-[#b54708]";
         detail = "Exponential backoff in progress";
+      } else if (hasPending) {
+        const count = channelItems.filter((i) => i.state === "pending").length;
+        status = "Pending";
+        statusClass = "text-[#666861]";
+        dotClass = "bg-[#666861]";
+        detail = `${count} queued sync(s) awaiting delivery`;
       } else {
         status = "Healthy";
         statusClass = "text-[#111111]";

@@ -283,7 +283,7 @@ export default function LoginPage() {
 
         {/* Error Notice */}
         {formError && (
-          <div className="flex items-start gap-2 rounded-xl border border-[#EBCFC2] bg-[#F8ECE6] p-3 text-xs text-[#7A4636]">
+          <div role="alert" className="flex items-start gap-2 rounded-xl border border-[#EBCFC2] bg-[#F8ECE6] p-3 text-xs text-[#7A4636]">
             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-[#b42318]" />
             <div>{formError}</div>
           </div>
@@ -291,7 +291,7 @@ export default function LoginPage() {
 
         {/* Confirmation Notice */}
         {confirmationNotice && (
-          <div className="flex items-start gap-2 rounded-xl border border-[#D8E7DB] bg-[#EEF5EF] p-3 text-xs text-[#315B43]">
+          <div role="status" className="flex items-start gap-2 rounded-xl border border-[#D8E7DB] bg-[#EEF5EF] p-3 text-xs text-[#315B43]">
             <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5 text-[#26734d]" />
             <div>{confirmationNotice}</div>
           </div>

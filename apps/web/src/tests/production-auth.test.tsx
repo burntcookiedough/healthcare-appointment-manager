@@ -36,7 +36,7 @@ describe("Production Authentication & Security Boundary", () => {
     clearStoredSession();
     apiClient.reset();
     localStorage.clear();
-    global.fetch = mockFetch;
+    vi.stubGlobal("fetch", mockFetch);
 
     // Configure production environment by default
     process.env.NEXT_PUBLIC_DEMO_MODE = "false";
@@ -46,6 +46,7 @@ describe("Production Authentication & Security Boundary", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     process.env = { ...originalEnv };
   });
 
@@ -659,5 +660,40 @@ describe("Production Authentication & Security Boundary", () => {
       expect.stringContaining("refresh_token"),
       expect.anything()
     );
+  });
+
+  it("15. a transient /me failure preserves the stored session for retry", async () => {
+    setStoredSession({
+      access_token: "valid-token",
+      refresh_token: "valid-refresh",
+      expires_in: 3600,
+      expires_at: Date.now() + 3600000,
+      token_type: "bearer",
+      user: { id: "u-1", email: "user@example.com" },
+    });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      statusText: "Service Unavailable",
+      json: async () => ({ error: { code: "SERVICE_UNAVAILABLE", message: "Try again later" } }),
+    });
+
+    function Consumer() {
+      const authContext = useAuth();
+      return <div>{authContext.user ? authContext.user.email : "Unauthenticated"}</div>;
+    }
+
+    const qc = createTestQueryClient();
+    render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <Consumer />
+        </AuthProvider>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByText("Unauthenticated")).toBeInTheDocument();
+    expect(getStoredSession()?.access_token).toBe("valid-token");
   });
 });

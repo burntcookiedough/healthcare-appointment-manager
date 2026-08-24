@@ -48,7 +48,7 @@ import {
   IntegrationRetryRequest,
   ApiErrorEnvelope,
 } from "@/types/api";
-import { formatDateOnly } from "@/lib/dates";
+import { APP_TIMEZONE, formatDateOnly, formatTime } from "@/lib/dates";
 import {
   getStoredSession,
   refreshSessionDeduplicated,
@@ -76,6 +76,7 @@ export const getApiBaseUrl = (): string => {
 };
 
 let activeAuthToken: string | null = null;
+const DEFAULT_HTTP_TIMEOUT_MS = 30_000;
 
 export function setApiAuthToken(token: string | null): void {
   activeAuthToken = token;
@@ -167,11 +168,20 @@ export async function requestHttp<T>(
     bodyContent = JSON.stringify(payload);
   }
 
-  const response = await fetch(url, {
-    method,
-    headers,
-    body: bodyContent,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_HTTP_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers,
+      body: bodyContent,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   // Handle 401 token expiry with automatic deduplicated refresh & retry reusing the exact same idempotency key
   if (response.status === 401 && !options.skipAuthRefresh) {
@@ -671,34 +681,48 @@ export const apiClient = {
 
   getPatientReminders: async (patientId: string): Promise<MedicationReminder[]> => {
     if (isDemoMode()) return mockDb.getPatientReminders(patientId);
-    // In production, reminders derive deterministically from prescription reminder schedules
-    try {
-      const appointments = await apiClient.getAppointments("completed");
-      const remindersList: MedicationReminder[] = [];
-      for (const apt of appointments) {
-        if (apt.visit_id) {
-          const visit = await apiClient.getVisit(apt.id);
-          if (visit.prescription && visit.prescription.items) {
-            for (const item of visit.prescription.items) {
-              remindersList.push({
-                id: `rem-${item.id}`,
-                prescription_item_id: item.id,
-                medication_name: item.medication_name,
-                dosage: item.dosage,
-                time_of_day: item.frequency.includes("morning") ? "08:00 AM" : "08:30 PM",
-                scheduled_date: item.start_date,
-                taken: false,
-                instructions: item.instructions,
-                route: item.route || "Oral",
-              });
-            }
+    // Production reminders come from completed visits and the executable reminder-schedule route.
+    // The appointments collection is already scoped to the authenticated patient by the API.
+    const appointments = await apiClient.getAppointments("completed");
+    if (appointments.length === 0) return [];
+    const preferences = await apiClient.getReminderPreferences();
+    const timezone = preferences.timezone || APP_TIMEZONE;
+    const today = formatDateOnly(new Date(), timezone);
+    const visits = await Promise.all(appointments.map((appointment) => apiClient.getVisit(appointment.id)));
+    const prescriptions = visits
+      .map((visit) => visit.prescription)
+      .filter((prescription): prescription is NonNullable<Visit["prescription"]> => Boolean(prescription));
+    const schedules = await Promise.all(
+      prescriptions.map(async (prescription) => ({
+        prescription,
+        schedule: await apiClient.getReminderSchedule(prescription.id, 365),
+      }))
+    );
+
+    return schedules.flatMap(({ prescription, schedule }) =>
+      schedule.items
+        .filter((occurrence) => formatDateOnly(occurrence.occurrence_at, timezone) === today)
+        .map((occurrence) => {
+          if (!occurrence.prescription_item_id) {
+            throw new Error("Reminder schedule omitted its prescription item identity.");
           }
-        }
-      }
-      return remindersList;
-    } catch {
-      return [];
-    }
+          const item = prescription.items.find((candidate) => candidate.id === occurrence.prescription_item_id);
+          if (!item) {
+            throw new Error("Reminder schedule referenced an unknown prescription item.");
+          }
+          return {
+            id: `rem-${prescription.id}-${occurrence.prescription_item_id}-${occurrence.occurrence_at}`,
+            prescription_item_id: item.id,
+            medication_name: item.medication_name,
+            dosage: item.dosage,
+            time_of_day: formatTime(occurrence.occurrence_at, timezone),
+            scheduled_date: formatDateOnly(occurrence.occurrence_at, timezone),
+            taken: occurrence.status.toLowerCase() === "taken",
+            instructions: item.instructions,
+            route: item.route || "Oral",
+          } satisfies MedicationReminder;
+        })
+    );
   },
 
   // Doctor Leave
