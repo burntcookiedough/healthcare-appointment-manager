@@ -347,6 +347,7 @@ describe("FastAPI Contract Integration & Wire Accuracy Suite", () => {
     setStoredSession({
       access_token: "expired-token",
       refresh_token: "valid-refresh-token",
+      expires_in: 3600,
       expires_at: Date.now() - 1000,
       token_type: "bearer",
       user: { id: "u-patient", email: "patient@example.com" },
