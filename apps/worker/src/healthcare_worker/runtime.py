@@ -11,6 +11,7 @@ from .ports import TrustedDataResolver
 from .processor import process_envelope
 from .registry import HandlerRegistry
 from .reminders import MedicationReminderDispatcher, ReminderOccurrenceStore
+from .resolver import PostgresTrustedDataResolver
 from .results import ProcessingResult
 from .retry import retry_policy_from_settings
 
@@ -18,25 +19,45 @@ from .retry import retry_policy_from_settings
 async def build_outbox_poller(
     settings: WorkerSettings,
     *,
-    resolver: TrustedDataResolver | None,
+    resolver: TrustedDataResolver | None = None,
     transport: HttpTransport | None = None,
     reminder_store: ReminderOccurrenceStore | None = None,
 ) -> tuple[OutboxPoller, PostgresOutboxStore, HandlerRegistry]:
-    """Assemble durable store, configured adapters, and a bounded poller."""
+    """Assemble durable store, trusted resolver, configured adapters, and poller.
+
+    When no test resolver is injected, the production path binds a PostgreSQL
+    resolver to the outbox store's shared async pool.  The pool remains owned by
+    the returned store and is closed by the process entrypoint.
+    """
 
     if not settings.database_url:
         raise RuntimeError("HEALTHCARE_WORKER_DATABASE_URL is required for outbox polling")
     store = await PostgresOutboxStore.from_dsn(settings.database_url)
-    dependencies = production_handler_dependencies(settings, resolver=resolver, transport=transport)
-    if resolver is not None and reminder_store is not None:
-        dependencies.medication_reminders = MedicationReminderDispatcher(
-            resolver=resolver,
-            email=dependencies.email,
-            occurrence_store=reminder_store,
+    resolved_resolver = resolver or PostgresTrustedDataResolver(store.pool)
+    try:
+        dependencies = production_handler_dependencies(
+            settings, resolver=resolved_resolver, transport=transport
         )
-    registry = build_default_registry(dependencies)
+        if reminder_store is not None:
+            dependencies.medication_reminders = MedicationReminderDispatcher(
+                resolver=resolved_resolver,
+                email=dependencies.email,
+                occurrence_store=reminder_store,
+            )
+        registry = build_default_registry(dependencies)
+    except Exception:
+        await store.close()
+        raise
 
-    def processor(envelope: EventEnvelope) -> ProcessingResult:
+    async def processor(envelope: EventEnvelope) -> ProcessingResult:
+        bind = getattr(resolved_resolver, "bind", None)
+        if callable(bind):
+            async with bind(envelope):
+                return process_envelope(
+                    envelope,
+                    registry=registry,
+                    supported_version=settings.event_version,
+                )
         return process_envelope(
             envelope,
             registry=registry,

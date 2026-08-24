@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import replace
@@ -43,6 +44,7 @@ from healthcare_worker.ports import (
     EmailRequest,
     OAuthCredentials,
     SummarySource,
+    TrustedDataResolutionError,
 )
 from healthcare_worker.processor import process_envelope
 from healthcare_worker.reminders import (
@@ -52,6 +54,7 @@ from healthcare_worker.reminders import (
     PrescriptionSchedule,
     generate_medication_occurrences,
 )
+from healthcare_worker.resolver import PostgresTrustedDataResolver
 from healthcare_worker.results import ProcessingOutcome, ProcessingResult
 from healthcare_worker.retry import RetryPolicy
 
@@ -369,6 +372,131 @@ class FakeTransport:
         return self.responses.pop(0)
 
 
+class ResolverConnection:
+    """Small asyncpg-shaped fixture that returns only synthetic trusted rows."""
+
+    def __init__(self, *, patient_exists: bool = False) -> None:
+        self.patient_exists = patient_exists
+        self.calendar_event_id = uuid4()
+        self.queries: list[str] = []
+
+    async def fetchrow(self, statement: str, *_parameters: object) -> dict[str, object] | None:
+        self.queries.append(statement)
+        if "patient_profiles" in statement:
+            return {"exists": 1} if self.patient_exists else None
+        if "integration_operations" in statement:
+            return {
+                "provider_reference": "trusted-calendar-event",
+                "outbox_event_id": self.calendar_event_id,
+                "payload_provider_reference": None,
+            }
+        if "symptom_versions" in statement:
+            return {"symptoms_text": "Synthetic symptom source"}
+        if "visits" in statement:
+            return {"notes_text": "Synthetic clinician note"}
+        return None
+
+    async def fetch(self, statement: str, *_parameters: object) -> list[dict[str, object]]:
+        self.queries.append(statement)
+        if "prescription_items" in statement:
+            return []
+        return []
+
+
+class ResolverAcquire:
+    def __init__(self, connection: ResolverConnection) -> None:
+        self.connection = connection
+
+    async def __aenter__(self) -> ResolverConnection:
+        return self.connection
+
+    async def __aexit__(self, *_args: object) -> bool:
+        return False
+
+
+class ResolverPool:
+    def __init__(self, connection: ResolverConnection) -> None:
+        self.connection = connection
+
+    def acquire(self) -> ResolverAcquire:
+        return ResolverAcquire(self.connection)
+
+
+def test_postgres_resolver_binds_summary_and_calendar_references_without_contact_or_tokens() -> (
+    None
+):
+    source_id = uuid4()
+    appointment_id = uuid4()
+    patient_id = uuid4()
+    connection = ResolverConnection(patient_exists=True)
+    resolver = PostgresTrustedDataResolver(ResolverPool(connection))
+
+    async def scenario() -> None:
+        async with resolver.bind(
+            envelope(
+                EventType.CLINICAL_LLM_SUMMARY.value,
+                {
+                    "source_record_reference": str(source_id),
+                    "source_version": 1,
+                    "task_kind": "pre_visit",
+                },
+            )
+        ):
+            source = resolver.resolve_summary_source(
+                ClinicalSummaryRequest(
+                    source_record_reference=source_id,
+                    source_version=1,
+                    task_kind="pre_visit",
+                )
+            )
+            assert source is not None
+            assert source.source_text == "Synthetic symptom source"
+
+        async with resolver.bind(
+            envelope(
+                EventType.CALENDAR_SYNC.value,
+                {
+                    "appointment_id": str(appointment_id),
+                    "action": "delete",
+                },
+            )
+        ):
+            event_reference = resolver.resolve_calendar_event_reference(
+                CalendarRequest(appointment_id=appointment_id, action="delete")
+            )
+            assert event_reference == "trusted-calendar-event"
+
+        async with resolver.bind(
+            envelope(
+                EventType.EMAIL_NOTIFICATION.value,
+                {
+                    "appointment_id": str(appointment_id),
+                    "recipient_reference": str(patient_id),
+                },
+            )
+        ):
+            result = SendGridEmailAdapter(
+                api_key="synthetic-key",
+                from_email="worker@example.test",
+                resolver=resolver,
+                transport=FakeTransport(HttpResponse(202, {})),
+            ).send(
+                EmailRequest(recipient_reference=str(patient_id)),
+                idempotency_key="event:email",
+            )
+            assert result.error_code == "EMAIL_RECIPIENT_UNAVAILABLE"
+
+        with pytest.raises(TrustedDataResolutionError) as credentials_error:
+            resolver.resolve_calendar_credentials(
+                CalendarRequest(appointment_id=appointment_id, action="create")
+            )
+        assert credentials_error.value.code == "CALENDAR_CREDENTIALS_UNAVAILABLE"
+
+    asyncio.run(scenario())
+    assert any("symptom_versions" in query for query in connection.queries)
+    assert any("integration_operations" in query for query in connection.queries)
+
+
 def test_sendgrid_calendar_adapters_are_mockable_and_fail_closed() -> None:
     resolver = InMemoryTrustedDataResolver(
         email={
@@ -428,6 +556,27 @@ def test_sendgrid_calendar_adapters_are_mockable_and_fail_closed() -> None:
     deleted = updated.model_copy(update={"action": "delete"})
     assert calendar_adapter.upsert_event(deleted, idempotency_key="event:calendar").is_success
     assert [request[0] for request in calendar_transport.requests] == ["POST", "PATCH", "DELETE"]
+
+    no_body_transport = FakeTransport(HttpResponse(204, {}))
+    no_body_adapter = GoogleCalendarOAuthAdapter(
+        client_id="client",
+        client_secret="secret",
+        resolver=resolver,
+        transport=no_body_transport,
+    )
+    no_body_result = no_body_adapter.upsert_event(
+        CalendarRequest(
+            appointment_id=uuid4(),
+            starts_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
+            ends_at=datetime(2026, 8, 24, 11, tzinfo=UTC),
+            action="create",
+        ),
+        idempotency_key="event:calendar:empty-body",
+    )
+    assert (
+        no_body_result.provider_reference
+        == hashlib.sha256(b"event:calendar:empty-body").hexdigest()[:32]
+    )
 
 
 def test_llm_structured_output_and_handler_persistence() -> None:

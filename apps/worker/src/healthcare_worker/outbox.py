@@ -241,6 +241,12 @@ class PostgresOutboxStore:
     def __init__(self, pool: Any) -> None:
         self._pool = pool
 
+    @property
+    def pool(self) -> Any:
+        """Return the shared async pool for other trusted worker repositories."""
+
+        return self._pool
+
     @classmethod
     async def from_dsn(
         cls, dsn: str, *, min_size: int = 1, max_size: int = 10

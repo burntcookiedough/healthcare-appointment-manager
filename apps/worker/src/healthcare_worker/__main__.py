@@ -73,7 +73,7 @@ async def run_poller(
     poller = None
     store = None
     try:
-        poller, store, _registry = await build_outbox_poller(settings, resolver=None)
+        poller, store, _registry = await build_outbox_poller(settings)
         if not await store.healthcheck():
             return {
                 "status": "unavailable",

@@ -30,6 +30,7 @@ from .ports import (
     GoogleCalendarPort,
     OAuthCredentials,
     SummarySource,
+    TrustedDataResolutionError,
     TrustedDataResolver,
 )
 
@@ -274,6 +275,12 @@ class SendGridEmailAdapter(EmailPort):
             return AdapterResult.terminal("PROVIDER_NOT_CONFIGURED")
         try:
             content = self._resolver.resolve_email(request)
+        except TrustedDataResolutionError as error:
+            return (
+                AdapterResult.retryable(error.code)
+                if error.retryable
+                else AdapterResult.terminal(error.code)
+            )
         except Exception:
             return AdapterResult.retryable("EMAIL_REFERENCE_ERROR")
         if content is None:
@@ -345,6 +352,12 @@ class GoogleCalendarOAuthAdapter(GoogleCalendarPort):
             return AdapterResult.terminal("PROVIDER_NOT_CONFIGURED")
         try:
             credentials = self._resolver.resolve_calendar_credentials(request)
+        except TrustedDataResolutionError as error:
+            return (
+                AdapterResult.retryable(error.code)
+                if error.retryable
+                else AdapterResult.terminal(error.code)
+            )
         except Exception:
             return AdapterResult.retryable("CALENDAR_CREDENTIALS_ERROR")
         if credentials is None:
@@ -352,7 +365,21 @@ class GoogleCalendarOAuthAdapter(GoogleCalendarPort):
         calendar_reference = quote(request.calendar_reference or "primary", safe="")
         event_reference = request.provider_event_reference
         action = request.action
-        if action == "delete" and not event_reference:
+        validator = getattr(self._resolver, "validate_calendar_event_reference", None)
+        if action in {"update", "delete"} and callable(validator):
+            try:
+                event_reference = validator(request)
+            except TrustedDataResolutionError as error:
+                return (
+                    AdapterResult.retryable(error.code)
+                    if error.retryable
+                    else AdapterResult.terminal(error.code)
+                )
+            except Exception:
+                return AdapterResult.retryable("CALENDAR_REFERENCE_ERROR")
+            if not event_reference:
+                return AdapterResult.terminal("CALENDAR_EVENT_REFERENCE_MISSING")
+        elif action == "delete" and not event_reference:
             # A cancellation must never fall through to the create branch.  The
             # provider event ID is trusted appointment state, not a value guessed
             # from the event UUID or accepted from free-form queue content.
@@ -361,6 +388,12 @@ class GoogleCalendarOAuthAdapter(GoogleCalendarPort):
                 return AdapterResult.terminal("CALENDAR_EVENT_REFERENCE_MISSING")
             try:
                 event_reference = resolver_fn(request)
+            except TrustedDataResolutionError as error:
+                return (
+                    AdapterResult.retryable(error.code)
+                    if error.retryable
+                    else AdapterResult.terminal(error.code)
+                )
             except Exception:
                 return AdapterResult.retryable("CALENDAR_REFERENCE_ERROR")
         if action in {"create", "update"} and (
@@ -427,7 +460,11 @@ class GoogleCalendarOAuthAdapter(GoogleCalendarPort):
             )
         if classified is not None:
             return classified
-        provider_reference = event_reference or idempotency_key
+        provider_reference = event_reference or (
+            hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:32]
+            if action == "create"
+            else idempotency_key
+        )
         if response.body:
             try:
                 decoded = json.loads(response.body.decode("utf-8"))
@@ -516,6 +553,12 @@ class HttpClinicalLLMAdapter(ClinicalLLMPort):
             return AdapterResult.terminal("PROVIDER_NOT_CONFIGURED")
         try:
             source = self._resolver.resolve_summary_source(request)
+        except TrustedDataResolutionError as error:
+            return (
+                AdapterResult.retryable(error.code)
+                if error.retryable
+                else AdapterResult.terminal(error.code)
+            )
         except Exception:
             return AdapterResult.retryable("SUMMARY_SOURCE_ERROR")
         if source is None:

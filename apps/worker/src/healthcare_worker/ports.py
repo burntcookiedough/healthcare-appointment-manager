@@ -11,6 +11,21 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from .results import ProcessingOutcome
 
 
+class TrustedDataResolutionError(Exception):
+    """Safe resolver failure carrying only a normalized machine-readable code.
+
+    Resolver failures may cross the provider boundary, but exception text must
+    never contain a DSN, provider response, secret, or clinical value.  Adapters
+    use this code to choose a terminal or retryable outcome without echoing the
+    underlying database exception.
+    """
+
+    def __init__(self, code: str, *, retryable: bool = False) -> None:
+        super().__init__(code)
+        self.code = code
+        self.retryable = retryable
+
+
 class AdapterResult(BaseModel):
     """Normalized provider result with no provider exception text."""
 
