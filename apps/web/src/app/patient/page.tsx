@@ -232,15 +232,15 @@ export default function PatientDashboard() {
                     </div>
 
                     <div className="flex items-center gap-3 self-end sm:self-auto">
-                      <span className="rounded-full bg-white border border-[#e7e7e2] px-2.5 py-1 text-xs font-mono font-semibold text-[#111111]">
+                      <span className="rounded-lg bg-white border border-[#E5E4DE] px-2.5 py-1 text-xs font-mono font-semibold text-[#171815]">
                         {rem.time_of_day}
                       </span>
                       <button
                         onClick={() => handleToggleDose(rem.id, rem.medication_name)}
-                        className={`min-h-[44px] px-3.5 rounded-full text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
+                        className={`min-h-[44px] px-3.5 rounded-xl text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#171815] ${
                           isTaken
-                            ? "bg-[#26734d] text-white"
-                            : "border border-[#e7e7e2] bg-white text-[#111111] hover:bg-[#f0f0eb]"
+                            ? "bg-[#315B43] text-white"
+                            : "border border-[#E5E4DE] bg-white text-[#171815] hover:bg-[#F6F5F0]"
                         }`}
                         aria-label={`Mark ${rem.medication_name} as ${isTaken ? "not taken" : "taken"}`}
                       >

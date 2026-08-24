@@ -182,7 +182,7 @@ export default function AdminLeavePage() {
                     </td>
                     <td className="py-4 px-6 text-[#626262] max-w-sm">{l.reason}</td>
                     <td className="py-4 px-6">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[#fff8eb] border border-[#fedf89] px-2.5 py-0.5 text-xs font-semibold text-[#b54708]">
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-[#F7F2DF] border border-[#E8DEC0] px-2.5 py-0.5 text-xs font-semibold text-[#655B36]">
                         <Clock className="h-3 w-3" />
                         <span>Active Approved</span>
                       </span>
@@ -299,28 +299,28 @@ export default function AdminLeavePage() {
                     {previewResult.affected_appointments.map((apt) => (
                       <div
                         key={apt.id}
-                        className="flex items-center justify-between p-3 rounded-xl border border-[#fecdca] bg-[#fffbfa]"
+                        className="flex items-center justify-between p-3 rounded-xl border border-[#EBCFC2] bg-[#F8ECE6]"
                       >
                         <div>
-                          <div className="font-bold text-[#111111]">{apt.patient_name}</div>
-                          <div className="text-[11px] text-[#626262]">
+                          <div className="font-bold text-[#171815]">{apt.patient_name}</div>
+                          <div className="text-[11px] text-[#666861]">
                             {formatDateTime(apt.starts_at)}
                           </div>
                         </div>
-                        <span className="rounded-full bg-[#fef3f2] px-2 py-0.5 text-[10px] font-bold text-[#b42318]">
+                        <span className="rounded-lg bg-white border border-[#EBCFC2] px-2 py-0.5 text-[10px] font-bold text-[#7A4636]">
                           Will Cancel
                         </span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="p-4 rounded-xl border border-[#bbf2cf] bg-[#edfdf4] text-[#1e613f]">
+                  <div className="p-4 rounded-xl border border-[#D8E7DB] bg-[#EEF5EF] text-[#315B43]">
                     ✓ No existing confirmed appointments conflict with this leave interval.
                   </div>
                 )}
               </div>
 
-              <div className="p-3 rounded-xl border border-[#fedf89] bg-[#fff8eb] text-[11px] text-[#b54708]">
+              <div className="p-3 rounded-xl border border-[#E8DEC0] bg-[#F7F2DF] text-[11px] text-[#655B36]">
                 <strong>Preview Token:</strong> <code>{previewResult.preview_token}</code>. Applying will commit all cancellations in a single atomic transaction (LEAVE-003).
               </div>
             </div>

@@ -12,23 +12,23 @@ interface UrgencyBadgeProps {
 
 export function UrgencyBadge({ urgency = "routine", className }: UrgencyBadgeProps) {
   let label = "Routine";
-  let bgClass = "bg-[#f6f6f2] text-[#626262] border-[#e7e7e2]";
+  let bgClass = "bg-[#F6F5F0] text-[#666861] border-[#E5E4DE]";
   let Icon = Activity;
 
   if (urgency === "urgent") {
     label = "Urgent";
-    bgClass = "bg-[#fff8eb] text-[#b54708] border-[#fedf89] font-medium";
+    bgClass = "bg-[#F7F2DF] text-[#655B36] border-[#E8DEC0] font-medium";
     Icon = AlertCircle;
   } else if (urgency === "emergency") {
     label = "Emergency";
-    bgClass = "bg-[#fef3f2] text-[#b42318] border-[#fecdca] font-semibold";
+    bgClass = "bg-[#F8ECE6] text-[#7A4636] border-[#EBCFC2] font-semibold";
     Icon = AlertOctagon;
   }
 
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs select-none",
+        "inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs select-none",
         bgClass,
         className
       )}

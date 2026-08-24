@@ -266,7 +266,7 @@ export default function DoctorVisitEditorPage() {
                 className="rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] p-5 space-y-4 shadow-xs"
               >
                 <div className="flex items-center justify-between">
-                  <span className="rounded-full bg-white border border-[#e7e7e2] px-2.5 py-0.5 text-xs font-bold text-[#111111]">
+                  <span className="rounded-lg bg-white border border-[#E5E4DE] px-2.5 py-0.5 text-xs font-bold text-[#171815]">
                     Medication #{index + 1}
                   </span>
                   {!isCompleted && (

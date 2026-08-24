@@ -8,31 +8,31 @@ import { Loader2 } from "lucide-react";
 import { Slot } from "@radix-ui/react-slot";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-45 select-none",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#171815] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-45 select-none",
   {
     variants: {
       variant: {
-        // Dark charcoal pill button (Assemble aesthetic)
+        // Dark charcoal button (restrained aesthetic)
         primary:
-          "bg-[#111111] text-white hover:bg-[#262626] active:scale-[0.98] rounded-full shadow-sm",
-        // Pale acid-lime emphasis pill
+          "bg-[#171815] text-white hover:bg-[#282924] active:scale-[0.98] rounded-xl shadow-xs",
+        // Soft pastel sage accent button
         accent:
-          "bg-[#efff72] text-[#111111] hover:bg-[#dff34d] font-semibold active:scale-[0.98] rounded-full border border-[#d6ea39] shadow-sm",
+          "bg-[#EEF5EF] text-[#315B43] hover:bg-[#E0EDE2] font-semibold active:scale-[0.98] rounded-xl border border-[#D8E7DB] shadow-xs",
         // Subtle outline
         outline:
-          "border border-[#e7e7e2] bg-white text-[#111111] hover:bg-[#f6f6f2] active:bg-[#eeeeea] rounded-full",
+          "border border-[#E5E4DE] bg-white text-[#171815] hover:bg-[#F6F5F0] active:bg-[#ECEBE4] rounded-xl",
         // Neutral secondary
         secondary:
-          "bg-[#f0f0eb] text-[#111111] hover:bg-[#e4e4dd] active:bg-[#dadad2] rounded-full",
+          "bg-[#F6F5F0] text-[#171815] hover:bg-[#ECEBE4] active:bg-[#E2E1D8] rounded-xl",
         // Ghost / text
         ghost:
-          "text-[#111111] hover:bg-[#f0f0eb] active:bg-[#e4e4dd] rounded-full",
+          "text-[#171815] hover:bg-[#F6F5F0] active:bg-[#ECEBE4] rounded-xl",
         // Danger action
         destructive:
-          "bg-[#b42318] text-white hover:bg-[#911d13] active:scale-[0.98] rounded-full shadow-sm",
+          "bg-[#B42318] text-white hover:bg-[#911D13] active:scale-[0.98] rounded-xl shadow-xs",
         // Subtle danger outline
         destructiveOutline:
-          "border border-[#fda29b] bg-[#fffbfa] text-[#b42318] hover:bg-[#fee4e2] rounded-full",
+          "border border-[#EBCFC2] bg-[#F8ECE6] text-[#7A4636] hover:bg-[#F2DCD1] rounded-xl",
       },
       size: {
         sm: "h-9 px-3.5 text-xs min-h-[44px]",

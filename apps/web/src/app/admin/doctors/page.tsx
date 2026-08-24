@@ -125,7 +125,7 @@ export default function AdminDoctorsPage() {
                       {formatCurrencyINR(doc.consultation_fee)}
                     </td>
                     <td className="py-4 px-6">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[#edfdf4] px-2.5 py-0.5 text-xs font-semibold text-[#1e613f]">
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-[#EEF5EF] border border-[#D8E7DB] px-2.5 py-0.5 text-xs font-semibold text-[#315B43]">
                         <CheckCircle2 className="h-3 w-3" />
                         <span>Active</span>
                       </span>

@@ -82,69 +82,69 @@ export default function DoctorDetailPage() {
       {/* Doctor Header & Bio Card */}
       <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 sm:p-8 shadow-sm space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-start gap-6 border-b border-[#f0f0eb] pb-6">
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl bg-[#efff72] text-[#111111] text-2xl font-bold border border-[#d6ea39]">
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-[#EEF5EF] text-[#315B43] text-2xl font-bold border border-[#D8E7DB]">
             <Stethoscope className="h-10 w-10" />
           </div>
 
           <div className="space-y-2 flex-1">
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-black text-[#111111]">{doctor.name}</h1>
-              <span className="rounded-full bg-[#edfdf4] px-3 py-0.5 text-xs font-semibold text-[#1e613f]">
+              <h1 className="text-2xl font-black text-[#171815]">{doctor.name}</h1>
+              <span className="rounded-lg bg-[#EEF5EF] border border-[#D8E7DB] px-2.5 py-0.5 text-xs font-semibold text-[#315B43]">
                 {doctor.specialization}
               </span>
             </div>
-            <p className="text-sm font-medium text-[#626262]">{doctor.credentials}</p>
-            <p className="text-sm text-[#111111] leading-relaxed max-w-3xl pt-1">
+            <p className="text-sm font-medium text-[#666861]">{doctor.credentials}</p>
+            <p className="text-sm text-[#171815] leading-relaxed max-w-3xl pt-1">
               {doctor.biography}
             </p>
           </div>
 
-          <div className="rounded-2xl border border-[#f0f0eb] bg-[#fbfbf8] p-4 text-center sm:min-w-[160px] space-y-1">
-            <span className="text-[11px] font-medium text-[#8e8e89] block">Consultation Fee</span>
-            <span className="text-2xl font-black text-[#111111]">
+          <div className="rounded-xl border border-[#E5E4DE] bg-[#FBFBF8] p-4 text-center sm:min-w-[160px] space-y-1">
+            <span className="text-[11px] font-medium text-[#666861] block">Consultation Fee</span>
+            <span className="text-2xl font-black text-[#171815]">
               {formatCurrencyINR(doctor.consultation_fee)}
             </span>
-            <span className="text-[10px] text-[#626262] block">per session</span>
+            <span className="text-[10px] text-[#666861] block">per session</span>
           </div>
         </div>
 
         {/* Doctor Badges / Attributes */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 text-xs">
-          <div className="flex items-center gap-2 text-[#626262]">
-            <Award className="h-4 w-4 text-[#26734d]" />
+          <div className="flex items-center gap-2 text-[#666861]">
+            <Award className="h-4 w-4 text-[#315B43]" />
             <span>
-              Experience: <strong className="text-[#111111]">{doctor.experience_years} Years</strong>
+              Experience: <strong className="text-[#171815]">{doctor.experience_years} Years</strong>
             </span>
           </div>
-          <div className="flex items-center gap-2 text-[#626262]">
-            <Globe className="h-4 w-4 text-[#26734d]" />
+          <div className="flex items-center gap-2 text-[#666861]">
+            <Globe className="h-4 w-4 text-[#315B43]" />
             <span>
-              Languages: <strong className="text-[#111111]">{doctor.languages.join(", ")}</strong>
+              Languages: <strong className="text-[#171815]">{doctor.languages.join(", ")}</strong>
             </span>
           </div>
-          <div className="flex items-center gap-2 text-[#626262]">
-            <Clock className="h-4 w-4 text-[#26734d]" />
+          <div className="flex items-center gap-2 text-[#666861]">
+            <Clock className="h-4 w-4 text-[#315B43]" />
             <span>
-              Timezone: <strong className="text-[#111111]">{doctor.time_zone}</strong>
+              Timezone: <strong className="text-[#171815]">{doctor.time_zone}</strong>
             </span>
           </div>
         </div>
       </div>
 
       {/* Available Slots & Booking Section */}
-      <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 sm:p-8 shadow-sm space-y-6">
+      <div className="rounded-2xl border border-[#E5E4DE] bg-white p-6 sm:p-8 shadow-xs space-y-6">
         <div>
-          <h3 className="text-xl font-bold tracking-tight text-[#111111]">
+          <h3 className="text-xl font-bold tracking-tight text-[#171815]">
             Select Consultation Date & Time
           </h3>
-          <p className="text-xs text-[#626262] mt-1">
+          <p className="text-xs text-[#666861] mt-1">
             Choose an advisory slot to acquire a 5-minute atomic reservation hold.
           </p>
         </div>
 
         {/* Step 1: Duration Selector */}
         <div className="space-y-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-[#8e8e89] block">
+          <label className="text-xs font-bold uppercase tracking-wider text-[#666861] block">
             Duration
           </label>
           <div className="flex flex-wrap items-center gap-2">
@@ -152,10 +152,10 @@ export default function DoctorDetailPage() {
               <button
                 key={dur}
                 onClick={() => setSelectedDuration(dur)}
-                className={`min-h-[44px] rounded-full px-4 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
+                className={`min-h-[44px] rounded-lg px-4 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#171815] ${
                   selectedDuration === dur
-                    ? "bg-[#111111] text-white"
-                    : "border border-[#e7e7e2] bg-[#fbfbf8] text-[#626262] hover:border-[#111111]"
+                    ? "bg-[#171815] text-white"
+                    : "border border-[#E5E4DE] bg-[#FBFBF8] text-[#666861] hover:border-[#171815]"
                 }`}
               >
                 {dur} Minutes

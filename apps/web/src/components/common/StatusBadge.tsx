@@ -21,74 +21,74 @@ interface StatusBadgeProps {
 
 export function StatusBadge({ status, size = "default", className }: StatusBadgeProps) {
   let label = status;
-  let bgClass = "bg-[#f0f0eb] text-[#626262] border-[#e7e7e2]";
+  let bgClass = "bg-[#F6F5F0] text-[#666861] border-[#E5E4DE]";
   let Icon = HelpCircle;
 
   switch (status) {
     case "confirmed":
     case "succeeded":
       label = status === "confirmed" ? "Confirmed" : "Synced";
-      bgClass = "bg-[#edfdf4] text-[#1e613f] border-[#bbf2cf]";
+      bgClass = "bg-[#EEF5EF] text-[#315B43] border-[#D8E7DB]";
       Icon = CheckCircle2;
       break;
 
     case "in_progress":
       label = "In Progress";
-      bgClass = "bg-[#fffbeb] text-[#9a6700] border-[#fedf89]";
+      bgClass = "bg-[#EEF3F7] text-[#38556B] border-[#D9E3EA]";
       Icon = Clock;
       break;
 
     case "completed":
       label = "Completed";
-      bgClass = "bg-[#f6f6f2] text-[#111111] border-[#dcdcd4] font-semibold";
+      bgClass = "bg-[#F6F5F0] text-[#171815] border-[#E5E4DE] font-semibold";
       Icon = CheckCircle2;
       break;
 
     case "pending":
       label = "Pending";
-      bgClass = "bg-[#f8f9fa] text-[#555] border-[#e2e4e8]";
+      bgClass = "bg-[#F6F5F0] text-[#666861] border-[#E5E4DE]";
       Icon = Clock;
       break;
 
     case "retrying":
       label = "Retrying";
-      bgClass = "bg-[#fff8eb] text-[#b54708] border-[#fedf89]";
+      bgClass = "bg-[#F7F2DF] text-[#655B36] border-[#E8DEC0]";
       Icon = RefreshCw;
       break;
 
     case "failed":
       label = "Failed";
-      bgClass = "bg-[#fef3f2] text-[#b42318] border-[#fecdca]";
+      bgClass = "bg-[#F8ECE6] text-[#7A4636] border-[#EBCFC2]";
       Icon = AlertTriangle;
       break;
 
     case "cancelled_patient":
       label = "Cancelled by Patient";
-      bgClass = "bg-[#fef3f2] text-[#b42318] border-[#fecdca]";
+      bgClass = "bg-[#F8ECE6] text-[#7A4636] border-[#EBCFC2]";
       Icon = XCircle;
       break;
 
     case "cancelled_doctor":
       label = "Cancelled by Doctor";
-      bgClass = "bg-[#fef3f2] text-[#b42318] border-[#fecdca]";
+      bgClass = "bg-[#F8ECE6] text-[#7A4636] border-[#EBCFC2]";
       Icon = XCircle;
       break;
 
     case "cancelled_admin":
       label = "Cancelled by Admin";
-      bgClass = "bg-[#fef3f2] text-[#b42318] border-[#fecdca]";
+      bgClass = "bg-[#F8ECE6] text-[#7A4636] border-[#EBCFC2]";
       Icon = XCircle;
       break;
 
     case "cancelled_doctor_leave":
       label = "Cancelled — Doctor Leave";
-      bgClass = "bg-[#fef3f2] text-[#b42318] border-[#fecdca]";
+      bgClass = "bg-[#F8ECE6] text-[#7A4636] border-[#EBCFC2]";
       Icon = CalendarOff;
       break;
 
     case "active":
       label = "Hold Active";
-      bgClass = "bg-[#efff72]/30 text-[#4c5700] border-[#d6ea39]";
+      bgClass = "bg-[#EEF5EF] text-[#315B43] border-[#D8E7DB]";
       Icon = Clock;
       break;
 
@@ -100,8 +100,8 @@ export function StatusBadge({ status, size = "default", className }: StatusBadge
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-medium tracking-tight select-none",
-        size === "sm" ? "text-xs py-0.5 px-2" : "text-xs py-1 px-3",
+        "inline-flex items-center gap-1.5 rounded-lg border font-medium tracking-tight select-none",
+        size === "sm" ? "text-xs py-0.5 px-2" : "text-xs py-1 px-2.5",
         bgClass,
         className
       )}

@@ -81,10 +81,10 @@ export default function DoctorDiscoveryPage() {
                 type="button"
                 onClick={() => setSelectedSpecialty(spec)}
                 aria-pressed={isSelected}
-                className={`min-h-[44px] whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
+                className={`min-h-[44px] whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#171815] ${
                   isSelected
-                    ? "bg-[#111111] text-white"
-                    : "border border-[#e7e7e2] bg-[#fbfbf8] text-[#626262] hover:border-[#111111]"
+                    ? "bg-[#171815] text-white"
+                    : "border border-[#E5E4DE] bg-[#FBFBF8] text-[#666861] hover:border-[#171815]"
                 }`}
               >
                 {spec}

@@ -82,23 +82,23 @@ export default function PatientPrescriptionsPage() {
                     </div>
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-bold text-[#111111]">
+                        <h3 className="text-base font-bold text-[#171815]">
                           {rem.medication_name}
                         </h3>
-                        <span className="rounded-full bg-white border border-[#e7e7e2] px-2.5 py-0.5 text-xs font-mono font-bold text-[#111111]">
+                        <span className="rounded-lg bg-white border border-[#E5E4DE] px-2 py-0.5 text-xs font-mono font-bold text-[#171815]">
                           {rem.dosage}
                         </span>
-                        <span className="text-xs text-[#8e8e89]">({rem.route})</span>
+                        <span className="text-xs text-[#666861]">({rem.route})</span>
                       </div>
-                      <p className="text-xs text-[#626262] leading-relaxed">
+                      <p className="text-xs text-[#666861] leading-relaxed">
                         {rem.instructions}
                       </p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-3 sm:self-center">
-                    <div className="flex items-center gap-1.5 rounded-full bg-white border border-[#e7e7e2] px-3 py-1 text-xs font-mono font-semibold text-[#111111]">
-                      <Clock className="h-3.5 w-3.5 text-[#8e8e89]" />
+                    <div className="flex items-center gap-1.5 rounded-lg bg-white border border-[#E5E4DE] px-2.5 py-1 text-xs font-mono font-semibold text-[#171815]">
+                      <Clock className="h-3.5 w-3.5 text-[#666861]" />
                       <span>{rem.time_of_day}</span>
                     </div>
 
@@ -107,10 +107,10 @@ export default function PatientPrescriptionsPage() {
                       onClick={() => handleToggle(rem.id, rem.medication_name)}
                       aria-pressed={Boolean(isTaken)}
                       aria-label={`Mark ${rem.medication_name} dose as ${isTaken ? "taken" : "pending"}`}
-                      className={`min-h-[44px] px-4 rounded-full text-xs font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
+                      className={`min-h-[44px] px-4 rounded-xl text-xs font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#171815] ${
                         isTaken
-                          ? "bg-[#26734d] text-white hover:bg-[#1e613f]"
-                          : "border border-[#e7e7e2] bg-white text-[#111111] hover:bg-[#f0f0eb]"
+                          ? "bg-[#315B43] text-white hover:bg-[#254633]"
+                          : "border border-[#E5E4DE] bg-white text-[#171815] hover:bg-[#F6F5F0]"
                       }`}
                     >
                       {isTaken ? "✓ Dose Taken" : "Mark Taken"}

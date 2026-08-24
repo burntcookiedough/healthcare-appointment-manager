@@ -52,7 +52,7 @@ export default function DoctorSchedulePage() {
               Operating Timezone: <strong>{doctor?.time_zone || "Asia/Kolkata"}</strong> (LEAVE-001)
             </p>
           </div>
-          <span className="rounded-full bg-[#edfdf4] px-3 py-1 text-xs font-bold text-[#1e613f]">
+          <span className="rounded-lg bg-[#EEF5EF] border border-[#D8E7DB] px-3 py-1 text-xs font-bold text-[#315B43]">
             Active Schedule
           </span>
         </div>
@@ -61,22 +61,22 @@ export default function DoctorSchedulePage() {
           {doctor?.working_hours.map((rule, idx) => (
             <div
               key={idx}
-              className="flex items-center justify-between p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8]"
+              className="flex items-center justify-between p-4 rounded-xl border border-[#E5E4DE] bg-[#FBFBF8]"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white border border-[#e7e7e2] text-[#111111] font-bold text-xs">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white border border-[#E5E4DE] text-[#171815] font-bold text-xs">
                   {DAYS[rule.day_of_week].slice(0, 3)}
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-[#111111]">{DAYS[rule.day_of_week]}</h4>
-                  <p className="text-xs text-[#626262]">
+                  <h4 className="text-sm font-bold text-[#171815]">{DAYS[rule.day_of_week]}</h4>
+                  <p className="text-xs text-[#666861]">
                     Slot interval: {rule.slot_duration_minutes} minutes
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 text-xs font-mono font-bold text-[#111111]">
-                <Clock className="h-4 w-4 text-[#8e8e89]" />
+              <div className="flex items-center gap-2 text-xs font-mono font-bold text-[#171815]">
+                <Clock className="h-4 w-4 text-[#666861]" />
                 <span>
                   {rule.start_time} - {rule.end_time}
                 </span>
@@ -87,11 +87,11 @@ export default function DoctorSchedulePage() {
       </div>
 
       {/* Approved Leaves Table */}
-      <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 sm:p-8 shadow-sm space-y-6">
-        <div className="flex items-center justify-between border-b border-[#f0f0eb] pb-4">
+      <div className="rounded-2xl border border-[#E5E4DE] bg-white p-6 sm:p-8 shadow-xs space-y-6">
+        <div className="flex items-center justify-between border-b border-[#F6F5F0] pb-4">
           <div>
-            <h2 className="text-xl font-bold text-[#111111]">Approved Leave Intervals</h2>
-            <p className="text-xs text-[#626262] mt-0.5">
+            <h2 className="text-xl font-bold text-[#171815]">Approved Leave Intervals</h2>
+            <p className="text-xs text-[#666861] mt-0.5">
               Leave periods automatically prevent patient holds and slot generation (LEAVE-001).
             </p>
           </div>
@@ -102,11 +102,11 @@ export default function DoctorSchedulePage() {
             {leaves.map((leave) => (
               <div
                 key={leave.id}
-                className="p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] space-y-2 text-xs"
+                className="p-4 rounded-xl border border-[#E5E4DE] bg-[#FBFBF8] space-y-2 text-xs"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-[#111111] text-sm">{leave.reason}</span>
-                  <span className="rounded-full bg-[#fff8eb] border border-[#fedf89] px-2.5 py-0.5 text-xs font-semibold text-[#b54708]">
+                  <span className="font-bold text-[#171815] text-sm">{leave.reason}</span>
+                  <span className="rounded-lg bg-[#F7F2DF] border border-[#E8DEC0] px-2.5 py-0.5 text-xs font-semibold text-[#655B36]">
                     Approved Leave
                   </span>
                 </div>

@@ -72,7 +72,7 @@ export function HoldCountdownBadge({ expiresAt, onExpire, className }: HoldCount
     return (
       <div
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border border-[#fecdca] bg-[#fef3f2] px-3 py-1 text-xs font-semibold text-[#b42318] shadow-sm select-none",
+          "inline-flex items-center gap-1.5 rounded-lg border border-[#EBCFC2] bg-[#F8ECE6] px-3 py-1 text-xs font-semibold text-[#7A4636] shadow-xs select-none",
           className
         )}
         role="alert"
@@ -86,10 +86,10 @@ export function HoldCountdownBadge({ expiresAt, onExpire, className }: HoldCount
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-3.5 py-1 text-xs font-semibold transition-colors shadow-sm select-none",
+        "inline-flex items-center gap-2 rounded-lg border px-3 py-1 text-xs font-semibold transition-colors shadow-xs select-none",
         isLowTime
-          ? "border-[#fedf89] bg-[#fff8eb] text-[#b54708] animate-pulse-subtle"
-          : "border-[#d6ea39] bg-[#efff72]/40 text-[#303800]",
+          ? "border-[#E8DEC0] bg-[#F7F2DF] text-[#655B36]"
+          : "border-[#D8E7DB] bg-[#EEF5EF] text-[#315B43]",
         className
       )}
       aria-live="polite"

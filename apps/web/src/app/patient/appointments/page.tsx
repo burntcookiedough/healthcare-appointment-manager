@@ -72,33 +72,33 @@ export default function PatientAppointmentsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-[#e7e7e2] pb-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#E5E4DE] pb-3">
         <button
           onClick={() => setActiveTab("active")}
-          className={`min-h-[44px] rounded-full px-4 py-2 text-xs font-bold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
+          className={`min-h-[44px] rounded-lg px-4 py-2 text-xs font-bold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#171815] ${
             activeTab === "active"
-              ? "bg-[#111111] text-white"
-              : "text-[#626262] hover:bg-[#f0f0eb] hover:text-[#111111]"
+              ? "bg-[#171815] text-white"
+              : "text-[#666861] hover:bg-[#F6F5F0] hover:text-[#171815]"
           }`}
         >
           Active / Confirmed
         </button>
         <button
           onClick={() => setActiveTab("past")}
-          className={`min-h-[44px] rounded-full px-4 py-2 text-xs font-bold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
+          className={`min-h-[44px] rounded-lg px-4 py-2 text-xs font-bold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#171815] ${
             activeTab === "past"
-              ? "bg-[#111111] text-white"
-              : "text-[#626262] hover:bg-[#f0f0eb] hover:text-[#111111]"
+              ? "bg-[#171815] text-white"
+              : "text-[#666861] hover:bg-[#F6F5F0] hover:text-[#171815]"
           }`}
         >
           Past Completed
         </button>
         <button
           onClick={() => setActiveTab("cancelled")}
-          className={`min-h-[44px] rounded-full px-4 py-2 text-xs font-bold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
+          className={`min-h-[44px] rounded-lg px-4 py-2 text-xs font-bold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#171815] ${
             activeTab === "cancelled"
-              ? "bg-[#111111] text-white"
-              : "text-[#626262] hover:bg-[#f0f0eb] hover:text-[#111111]"
+              ? "bg-[#171815] text-white"
+              : "text-[#666861] hover:bg-[#F6F5F0] hover:text-[#171815]"
           }`}
         >
           Cancelled

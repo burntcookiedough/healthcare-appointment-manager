@@ -8,7 +8,6 @@ import { apiClient } from "@/lib/api/client";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { UrgencyBadge } from "@/components/common/UrgencyBadge";
-import { AiBadge } from "@/components/common/AiBadge";
 import { EmptyState } from "@/components/common/EmptyState";
 import { CardSkeleton } from "@/components/common/Skeleton";
 import { formatDate, formatTime, formatDateTime } from "@/lib/dates";
@@ -20,6 +19,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Lock,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -74,24 +74,24 @@ export default function DoctorAppointmentWorkspacePage() {
       </Link>
 
       {/* Patient & Consultation Summary Card */}
-      <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 sm:p-8 shadow-sm space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#f0f0eb] pb-6">
+      <div className="rounded-2xl border border-[#E5E4DE] bg-white p-6 sm:p-8 shadow-xs space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#F6F5F0] pb-6">
           <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#efff72] text-[#111111]">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#EEF3F7] text-[#38556B] border border-[#D9E3EA]">
               <User className="h-7 w-7" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="text-2xl font-black text-[#111111]">
+                <h1 className="text-2xl font-black text-[#171815]">
                   {appointment.patient_name}
                 </h1>
-                <span className="text-sm font-semibold text-[#626262]">
+                <span className="text-sm font-semibold text-[#666861]">
                   ({appointment.patient_age || 34} yrs • {appointment.patient_gender || "Male"})
                 </span>
                 <StatusBadge status={appointment.status} size="sm" />
                 <UrgencyBadge urgency={appointment.urgency} />
               </div>
-              <p className="text-xs text-[#8e8e89] mt-0.5">
+              <p className="text-xs text-[#666861] mt-0.5">
                 Patient ID: {appointment.patient_id} • Booking: {appointment.id}
               </p>
             </div>
@@ -101,7 +101,7 @@ export default function DoctorAppointmentWorkspacePage() {
             {appointment.visit_id ? (
               <Button asChild variant="primary" size="default">
                 <Link href={`/doctor/visits/${appointment.visit_id}`}>
-                  <FileText className="h-4 w-4 text-[#efff72]" />
+                  <FileText className="h-4 w-4" />
                   <span>Resume Consultation Notes</span>
                 </Link>
               </Button>
@@ -112,7 +112,7 @@ export default function DoctorAppointmentWorkspacePage() {
                 onClick={() => openVisitMutation.mutate()}
                 isLoading={openVisitMutation.isPending}
               >
-                <Stethoscope className="h-4 w-4 text-[#efff72]" />
+                <Stethoscope className="h-4 w-4" />
                 <span>Start Consultation & Open Notes</span>
               </Button>
             )}
@@ -120,22 +120,22 @@ export default function DoctorAppointmentWorkspacePage() {
         </div>
 
         {/* Time Info Bar */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 rounded-2xl border border-[#f0f0eb] bg-[#fbfbf8] p-4 text-xs">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 rounded-xl border border-[#E5E4DE] bg-[#F6F5F0] p-4 text-xs">
           <div>
-            <span className="text-[#8e8e89] block">Scheduled Window</span>
-            <span className="font-bold text-[#111111]">
+            <span className="text-[#666861] block">Scheduled Window</span>
+            <span className="font-bold text-[#171815]">
               {formatTime(appointment.starts_at)} - {formatTime(appointment.ends_at)} (IST)
             </span>
           </div>
           <div>
-            <span className="text-[#8e8e89] block">Date</span>
-            <span className="font-bold text-[#111111]">
+            <span className="text-[#666861] block">Date</span>
+            <span className="font-bold text-[#171815]">
               {formatDate(appointment.starts_at, "EEEE, MMMM d, yyyy")}
             </span>
           </div>
           <div>
-            <span className="text-[#8e8e89] block">Data Minimization</span>
-            <span className="font-semibold text-[#26734d] flex items-center gap-1">
+            <span className="text-[#666861] block">Data Minimization</span>
+            <span className="font-semibold text-[#315B43] flex items-center gap-1">
               <Lock className="h-3 w-3" />
               <span>Restricted Clinical View</span>
             </span>
@@ -147,38 +147,46 @@ export default function DoctorAppointmentWorkspacePage() {
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
         {/* Left Column: AI-Assisted Pre-Visit Clinical Brief (LLM-001) */}
         <div className="lg:col-span-6 space-y-4">
-          <div className="rounded-3xl border border-[#dceb4a] bg-[#efff72]/15 p-6 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-[#dceb4a]/60 pb-3">
-              <div className="flex items-center gap-2">
-                <AiBadge status={appointment.ai_brief_status} label="AI Pre-Visit Clinical Brief" />
+          <div className="rounded-2xl border border-[#D9E3EA] bg-[#EEF3F7] p-6 shadow-xs space-y-5">
+            <div className="flex items-center justify-between border-b border-[#D9E3EA] pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-white border border-[#D9E3EA] text-[#38556B]">
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#38556B]">
+                    Pre-visit clinical brief
+                  </h3>
+                  <p className="text-[11px] text-[#666861]">AI-assisted · Review before use</p>
+                </div>
               </div>
-              <span className="text-[10px] font-mono text-[#626262]">Model: v2-medical-summary</span>
+              <span className="text-[10px] font-mono text-[#666861]">Model: v2-medical-summary</span>
             </div>
 
             {appointment.ai_brief_status === "ready" && appointment.ai_brief_summary ? (
               <div className="space-y-4 text-xs">
-                <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#4c5700] block mb-1">
-                    Synthesized Intake Summary
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#38556B] block">
+                    Summary
                   </span>
-                  <p className="text-sm text-[#111111] leading-relaxed bg-white/70 p-3.5 rounded-2xl border border-[#e7e7e2]">
+                  <p className="text-sm text-[#171815] leading-relaxed bg-white p-3.5 rounded-xl border border-[#D9E3EA]">
                     {appointment.ai_brief_summary}
                   </p>
                 </div>
 
                 {appointment.ai_brief_key_concerns && (
-                  <div>
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#4c5700] block mb-1.5">
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#38556B] block">
                       Suggested Clinical Assessment Points
                     </span>
-                    <ul className="space-y-1.5">
+                    <ul className="divide-y divide-[#D9E3EA] rounded-xl border border-[#D9E3EA] bg-white">
                       {appointment.ai_brief_key_concerns.map((concern, idx) => (
                         <li
                           key={idx}
-                          className="flex items-start gap-2 bg-white/70 p-2.5 rounded-xl border border-[#e7e7e2] text-xs text-[#111111]"
+                          className="flex items-start gap-2.5 p-3 text-xs text-[#171815]"
                         >
-                          <span className="font-bold text-[#4c5700]">•</span>
-                          <span>{concern}</span>
+                          <span className="font-bold text-[#38556B] mt-0.5">•</span>
+                          <span className="leading-relaxed">{concern}</span>
                         </li>
                       ))}
                     </ul>
@@ -186,20 +194,20 @@ export default function DoctorAppointmentWorkspacePage() {
                 )}
               </div>
             ) : appointment.ai_brief_status === "pending" ? (
-              <div className="py-6 text-center text-xs text-[#626262] space-y-2">
-                <div className="h-6 w-6 border-2 border-[#111111] border-t-transparent rounded-full animate-spin mx-auto" />
-                <p>Synthesizing patient symptom intake...</p>
+              <div className="py-8 text-center text-xs text-[#666861] space-y-2">
+                <div className="h-6 w-6 border-2 border-[#38556B] border-t-transparent rounded-full animate-spin mx-auto" />
+                <p>Synthesizing patient symptom intake…</p>
               </div>
             ) : (
-              <div className="py-4 text-xs text-[#626262] space-y-1">
-                <p className="font-semibold text-[#111111]">AI Brief Service Currently Unavailable</p>
+              <div className="py-4 text-xs text-[#666861] space-y-1">
+                <p className="font-semibold text-[#171815]">AI Brief Service Currently Unavailable</p>
                 <p>
                   Graceful degradation active (LLM-002). Proceed directly with original patient symptoms below.
                 </p>
               </div>
             )}
 
-            <div className="border-t border-[#dceb4a]/60 pt-3 text-[10px] text-[#626262] leading-tight">
+            <div className="border-t border-[#D9E3EA] pt-3 text-[11px] text-[#666861] leading-tight">
               <strong>Advisory Notice (LLM-001):</strong> Generated AI content is advisory only. Clinical diagnostic authority resides solely with the licensed practitioner.
             </div>
           </div>
@@ -207,25 +215,25 @@ export default function DoctorAppointmentWorkspacePage() {
 
         {/* Right Column: Immutable Original Patient Symptoms (TEXT-001) */}
         <div className="lg:col-span-6 space-y-4">
-          <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-[#f0f0eb] pb-3">
+          <div className="rounded-2xl border border-[#E5E4DE] bg-white p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between border-b border-[#F6F5F0] pb-3.5">
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-[#26734d]" />
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[#111111]">
+                <FileText className="h-4 w-4 text-[#315B43]" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#171815]">
                   Original Patient Symptoms (Immutable Source)
                 </h3>
               </div>
-              <span className="text-[10px] text-[#8e8e89]">
+              <span className="text-[10px] text-[#666861]">
                 {formatDateTime(appointment.symptoms_recorded_at)}
               </span>
             </div>
 
-            <div className="rounded-2xl border border-[#f0f0eb] bg-[#fbfbf8] p-4 text-xs sm:text-sm text-[#111111] leading-relaxed whitespace-pre-wrap min-h-[160px]">
+            <div className="rounded-xl border border-[#E5E4DE] bg-[#F6F5F0] p-4 text-xs sm:text-sm text-[#171815] leading-relaxed whitespace-pre-wrap min-h-[160px]">
               {appointment.original_symptoms_text}
             </div>
 
-            <div className="rounded-xl border border-[#f0f0eb] bg-[#fbfbf8] p-3 text-[11px] text-[#626262] flex items-center gap-2">
-              <CheckCircle2 className="h-3.5 w-3.5 text-[#26734d]" />
+            <div className="rounded-xl border border-[#E5E4DE] bg-[#F6F5F0] p-3 text-[11px] text-[#666861] flex items-center gap-2">
+              <CheckCircle2 className="h-3.5 w-3.5 text-[#315B43]" />
               <span>
                 Source text preserved losslessly per Domain Contract <strong>TEXT-001</strong>.
               </span>
