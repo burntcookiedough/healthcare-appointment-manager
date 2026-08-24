@@ -1,0 +1,205 @@
+"use client";
+
+import * as React from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiClient } from "@/lib/api/client";
+import { Button } from "@/components/ui/Button";
+import { StatusBadge } from "@/components/common/StatusBadge";
+import { EmptyState } from "@/components/common/EmptyState";
+import { CardSkeleton } from "@/components/common/Skeleton";
+import { formatDateTime } from "@/lib/dates";
+import {
+  Layers,
+  RefreshCw,
+  Mail,
+  Calendar,
+  Sparkles,
+  Pill,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  ShieldCheck,
+} from "lucide-react";
+import { toast } from "sonner";
+
+export default function AdminIntegrationsPage() {
+  const queryClient = useQueryClient();
+
+  const { data: integrations, isLoading } = useQuery({
+    queryKey: ["admin-integrations-list"],
+    queryFn: () => apiClient.getAdminIntegrations(),
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: async (operationId: string) => {
+      return apiClient.retryIntegration(operationId);
+    },
+    onSuccess: (updated) => {
+      toast.success(`Operation ${updated.operation_id} retry succeeded.`);
+      queryClient.invalidateQueries({ queryKey: ["admin-integrations-list"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-integrations-overview"] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.error?.message || "Failed to retry integration operation.");
+    },
+  });
+
+  const items = integrations || [];
+  const succeededCount = items.filter((i) => i.state === "succeeded").length;
+  const retryingCount = items.filter((i) => i.state === "retrying").length;
+  const failedCount = items.filter((i) => i.state === "failed").length;
+
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-black tracking-tight text-[#111111] sm:text-3xl">
+            Integration Health & Outbox Governance
+          </h2>
+          <p className="text-sm text-[#626262] mt-1">
+            Monitor asynchronous delivery for email, calendar sync, LLM intakes, and SMS reminders (OUTBOX-001, OUTBOX-003).
+          </p>
+        </div>
+      </div>
+
+      {/* Channel Health Overview Strip */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 space-y-2 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[#8e8e89]">SendGrid Email</span>
+            <Mail className="h-4 w-4 text-[#26734d]" />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-2xl font-black text-[#111111]">Healthy</span>
+            <span className="h-2 w-2 rounded-full bg-[#26734d]" />
+          </div>
+          <span className="text-[11px] text-[#626262]">Confirmation notifications</span>
+        </div>
+
+        <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 space-y-2 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[#8e8e89]">Google Calendar</span>
+            <Calendar className="h-4 w-4 text-[#b42318]" />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-2xl font-black text-[#b42318]">Degraded</span>
+            <span className="h-2 w-2 rounded-full bg-[#b42318] animate-pulse" />
+          </div>
+          <span className="text-[11px] text-[#b42318]">1 failed sync requiring retry</span>
+        </div>
+
+        <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 space-y-2 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[#8e8e89]">LLM Summary Adapter</span>
+            <Sparkles className="h-4 w-4 text-[#efff72] fill-[#efff72]" />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-2xl font-black text-[#111111]">Operational</span>
+            <span className="h-2 w-2 rounded-full bg-[#26734d]" />
+          </div>
+          <span className="text-[11px] text-[#626262]">Pre-visit intake synthesis</span>
+        </div>
+
+        <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 space-y-2 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[#8e8e89]">Reminders Channel</span>
+            <Pill className="h-4 w-4 text-[#b54708]" />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-2xl font-black text-[#b54708]">Backoff Retrying</span>
+            <span className="h-2 w-2 rounded-full bg-[#b54708]" />
+          </div>
+          <span className="text-[11px] text-[#626262]">Deterministic SMS dispatcher</span>
+        </div>
+      </div>
+
+      {/* Outbox Event Table with Manual Retry */}
+      <div className="rounded-3xl border border-[#e7e7e2] bg-white shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-[#f0f0eb] flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-bold text-[#111111]">Transactional Outbox Operations</h3>
+            <p className="text-xs text-[#626262] mt-0.5">
+              Individual asynchronous work items recorded alongside domain transactions.
+            </p>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="p-6">
+            <CardSkeleton />
+          </div>
+        ) : items.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-[#e7e7e2] bg-[#fbfbf8] font-bold text-[#626262]">
+                <tr>
+                  <th className="py-4 px-6">Operation ID & Channel</th>
+                  <th className="py-4 px-6">Summary</th>
+                  <th className="py-4 px-6">Attempts</th>
+                  <th className="py-4 px-6">Last Attempt</th>
+                  <th className="py-4 px-6">State</th>
+                  <th className="py-4 px-6 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#f0f0eb]">
+                {items.map((item) => (
+                  <tr key={item.id} className="hover:bg-[#fbfbf8]/80 transition-colors">
+                    <td className="py-4 px-6">
+                      <div className="font-mono font-bold text-[#111111]">{item.operation_id}</div>
+                      <div className="text-[11px] text-[#626262] uppercase font-semibold mt-0.5">
+                        {item.channel}
+                      </div>
+                    </td>
+                    <td className="py-4 px-6 max-w-xs">
+                      <div className="text-[#111111] font-medium">{item.payload_summary}</div>
+                      {item.error_message && (
+                        <div className="text-[11px] text-[#b42318] mt-0.5 font-mono">
+                          {item.error_code}: {item.error_message}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-4 px-6 font-mono text-[#111111]">
+                      {item.attempt_count} / {item.max_attempts}
+                    </td>
+                    <td className="py-4 px-6 text-[#626262]">
+                      {item.last_attempt_at ? formatDateTime(item.last_attempt_at) : "Pending"}
+                    </td>
+                    <td className="py-4 px-6">
+                      <StatusBadge status={item.state} size="sm" />
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      {item.state === "failed" ? (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => retryMutation.mutate(item.operation_id)}
+                          isLoading={
+                            retryMutation.isPending &&
+                            retryMutation.variables === item.operation_id
+                          }
+                          className="text-xs"
+                        >
+                          <RefreshCw className="h-3 w-3 text-[#efff72]" />
+                          <span>Retry Work</span>
+                        </Button>
+                      ) : (
+                        <span className="text-[11px] text-[#8e8e89]">No action required</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState
+            icon={Layers}
+            title="Outbox queue is empty"
+            description="All outbox jobs have been processed."
+          />
+        )}
+      </div>
+    </div>
+  );
+}

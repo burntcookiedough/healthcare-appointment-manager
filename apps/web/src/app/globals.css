@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #fbfbf8;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f6f6f2;
+  --color-ink: #111111;
+  --color-ink-muted: #626262;
+  --color-ink-faint: #8e8e89;
+  --color-line: #e7e7e2;
+  --color-line-subtle: #f0f0eb;
+  --color-accent: #efff72;
+  --color-accent-strong: #dff34d;
+  --color-accent-dark: #1f2700;
+  --color-danger: #b42318;
+  --color-danger-subtle: #fef3f2;
+  --color-warning: #9a6700;
+  --color-warning-subtle: #fffbeb;
+  --color-success: #26734d;
+  --color-success-subtle: #edfdf4;
+  --radius-control: 999px;
+  --radius-panel: 24px;
+  --shadow-panel: 0 24px 70px rgb(17 17 17 / 8%);
+  --shadow-float: 0 12px 36px rgb(17 17 17 / 6%);
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  --background: #fbfbf8;
+  --foreground: #111111;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Subtle grid texture for calendar / scheduling aesthetic */
+.bg-grid-pattern {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(231, 231, 226, 0.45) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(231, 231, 226, 0.45) 1px, transparent 1px);
+}
+
+/* Focus visibility for WCAG 2.2 AA */
+:focus-visible {
+  outline: 2px solid #111111;
+  outline-offset: 2px;
+}
+
+/* Floating token animation for public landing hero */
+@keyframes soft-float-1 {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(1deg); }
+}
+
+@keyframes soft-float-2 {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-12px) rotate(-1.5deg); }
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+.animate-float-1 {
+  animation: soft-float-1 6s ease-in-out infinite;
+}
+
+.animate-float-2 {
+  animation: soft-float-2 7s ease-in-out infinite 1s;
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Reduced Motion Override */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  
+  .animate-float-1,
+  .animate-float-2,
+  .animate-pulse-subtle {
+    animation: none !important;
+  }
+}
