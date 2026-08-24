@@ -31,6 +31,7 @@ export const MOCK_PATIENT: PatientProfile = {
 export const MOCK_DOCTORS: DoctorDetail[] = [
   {
     id: "doc-001-rajesh",
+    version: 1,
     name: "Dr. Rajesh Verma",
     credentials: "MD (Medicine), DM (Cardiology) — AIIMS New Delhi",
     specialization: "Cardiology",
@@ -56,6 +57,7 @@ export const MOCK_DOCTORS: DoctorDetail[] = [
   },
   {
     id: "doc-002-ananya",
+    version: 1,
     name: "Dr. Ananya Iyer",
     credentials: "MD (Pediatrics), DNB, Fellowship Pediatric Nutrition",
     specialization: "Pediatrics",
@@ -80,6 +82,7 @@ export const MOCK_DOCTORS: DoctorDetail[] = [
   },
   {
     id: "doc-003-vikram",
+    version: 1,
     name: "Dr. Vikram Malhotra",
     credentials: "MBBS, MD, DM (Neurology) — NIMHANS Bengaluru",
     specialization: "Neurology",
@@ -102,6 +105,7 @@ export const MOCK_DOCTORS: DoctorDetail[] = [
   },
   {
     id: "doc-004-sunita",
+    version: 1,
     name: "Dr. Sunita Rao",
     credentials: "MD (Dermatology, Venereology & Leprosy) — CMC Vellore",
     specialization: "Dermatology",
@@ -124,6 +128,7 @@ export const MOCK_DOCTORS: DoctorDetail[] = [
   },
   {
     id: "doc-005-amitav",
+    version: 1,
     name: "Dr. Amitav Ghosh",
     credentials: "MS (Orthopaedics), MCh (Ortho) — Apollo Institute",
     specialization: "Orthopaedics",
@@ -398,7 +403,7 @@ export const MOCK_PRESCRIPTION: Prescription = {
       medication_name: "Mometasone Furoate 0.1% Cream",
       dosage: "Thin layer",
       route: "Topical",
-      frequency: "Once daily at bedtime",
+      frequency: "once_daily",
       start_date: todayDateStr,
       duration_days: 14,
       instructions: "Apply sparingly to affected forearm lesions at night. Avoid broken skin.",
@@ -408,7 +413,7 @@ export const MOCK_PRESCRIPTION: Prescription = {
       medication_name: "Cetirizine Hydrochloride 10mg",
       dosage: "1 tablet (10mg)",
       route: "Oral",
-      frequency: "Once daily at bedtime",
+      frequency: "once_daily",
       start_date: todayDateStr,
       duration_days: 10,
       instructions: "Take with water after dinner to alleviate nighttime itching.",
@@ -418,7 +423,7 @@ export const MOCK_PRESCRIPTION: Prescription = {
       medication_name: "Ceramide Moisturizing Barrier Lotion",
       dosage: "Liberal application",
       route: "Topical",
-      frequency: "Twice daily after meals",
+      frequency: "twice_daily",
       start_date: todayDateStr,
       duration_days: 30,
       instructions: "Apply within 3 minutes of bathing and repeat in the evening.",
@@ -470,6 +475,7 @@ export const MOCK_LEAVES: DoctorLeave[] = [
 export const MOCK_ADMIN_INTEGRATIONS: AdminIntegrationItem[] = [
   {
     id: "int-item-1",
+    version: 1,
     operation_id: "op-sendgrid-001",
     channel: "email",
     state: "succeeded",
@@ -483,6 +489,7 @@ export const MOCK_ADMIN_INTEGRATIONS: AdminIntegrationItem[] = [
   },
   {
     id: "int-item-2",
+    version: 1,
     operation_id: "op-gcal-002",
     channel: "calendar",
     state: "failed",
@@ -498,6 +505,7 @@ export const MOCK_ADMIN_INTEGRATIONS: AdminIntegrationItem[] = [
   },
   {
     id: "int-item-3",
+    version: 1,
     operation_id: "op-llm-003",
     channel: "llm",
     state: "succeeded",
@@ -511,6 +519,7 @@ export const MOCK_ADMIN_INTEGRATIONS: AdminIntegrationItem[] = [
   },
   {
     id: "int-item-4",
+    version: 1,
     operation_id: "op-remind-004",
     channel: "medication_reminder",
     state: "retrying",

@@ -115,11 +115,9 @@ export default function DoctorDiscoveryPage() {
                     <Stethoscope className="h-7 w-7" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-[#111111]">{doc.name}</h3>
-                    <p className="text-xs font-semibold text-[#26734d]">{doc.specialization}</p>
-                    <p className="mt-0.5 text-xs text-[#626262] line-clamp-2 leading-relaxed">
-                      {doc.credentials}
-                    </p>
+                    <h3 className="text-base font-bold text-[#111111]">{doc.name ?? doc.display_name ?? "Doctor name unavailable"}</h3>
+                    <p className="text-xs font-semibold text-[#26734d]">{doc.specialization ?? "Specialization unavailable"}</p>
+                    {doc.credentials && <p className="mt-0.5 text-xs text-[#626262] line-clamp-2 leading-relaxed">{doc.credentials}</p>}
                   </div>
                 </div>
 
@@ -127,18 +125,20 @@ export default function DoctorDiscoveryPage() {
                 <div className="grid grid-cols-2 gap-2 rounded-2xl border border-[#f0f0eb] bg-[#fbfbf8] p-3 text-xs">
                   <div>
                     <span className="text-[#8e8e89] block text-[11px]">Experience</span>
-                    <span className="font-bold text-[#111111]">{doc.experience_years ?? 5} Years</span>
+                    <span className="font-bold text-[#111111]">{doc.experience_years !== undefined ? `${doc.experience_years} Years` : "Not provided"}</span>
                   </div>
                   <div>
                     <span className="text-[#8e8e89] block text-[11px]">Consultation Fee</span>
-                    <span className="font-bold text-[#111111]">{formatCurrencyINR(doc.consultation_fee ?? 1000)}</span>
+                    <span className="font-bold text-[#111111]">{doc.consultation_fee !== undefined ? formatCurrencyINR(doc.consultation_fee) : "Fee unavailable"}</span>
                   </div>
                 </div>
 
                 {/* Next Available Slot */}
                 <div className="flex items-center gap-1.5 text-xs text-[#626262]">
                   <Clock className="h-3.5 w-3.5 text-[#26734d]" />
-                  <span>Next available: <strong>Today</strong></span>
+                  <span>
+                    Next available: <strong>{doc.next_available_at ? "Published" : "Not provided"}</strong>
+                  </span>
                 </div>
               </div>
 

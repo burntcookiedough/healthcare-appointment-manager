@@ -10,7 +10,7 @@ describe("Structured Prescriptions and Deterministic Reminders (RX-001, RX-002)"
         medication_name: "Metformin Hydrochloride",
         dosage: "500mg",
         route: "Oral",
-        frequency: "Twice daily after meals",
+        frequency: "twice_daily",
         start_date: "2026-08-24",
         duration_days: 30,
         instructions: "Take with breakfast and dinner",
@@ -20,7 +20,7 @@ describe("Structured Prescriptions and Deterministic Reminders (RX-001, RX-002)"
         medication_name: "Atorvastatin Calcium",
         dosage: "10mg",
         route: "Oral",
-        frequency: "Once daily at bedtime",
+        frequency: "once_daily",
         start_date: "2026-08-24",
         duration_days: 30,
         instructions: "Take at night",
@@ -32,7 +32,8 @@ describe("Structured Prescriptions and Deterministic Reminders (RX-001, RX-002)"
       "Comprehensive cardiometabolic consultation notes.",
       "Type 2 Diabetes Mellitus with Dyslipidemia (E11.69)",
       items,
-      "Follow up with HbA1c in 3 months"
+      "Follow up with HbA1c in 3 months",
+      { expectedVersion: 1 }
     );
 
     expect(completed.status).toBe("completed");
@@ -45,7 +46,7 @@ describe("Structured Prescriptions and Deterministic Reminders (RX-001, RX-002)"
     expect(reminders.length).toBeGreaterThan(0);
 
     // Verify derived timing fields
-    const morningReminders = reminders.filter((r) => r.time_of_day.includes("08:30 AM") || r.time_of_day.includes("08:00 AM"));
+    const morningReminders = reminders.filter((r) => r.time_of_day.includes("09:00 AM"));
     expect(morningReminders.length).toBeGreaterThan(0);
 
     // Verify structured dosage is attached

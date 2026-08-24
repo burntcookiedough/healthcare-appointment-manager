@@ -114,10 +114,10 @@ export default function AdminAppointmentsPage() {
                       <div className="font-mono font-bold text-[#111111]">{apt.id}</div>
                       <div className="text-[11px] text-[#8e8e89]">{formatDate(apt.starts_at)}</div>
                     </td>
-                    <td className="py-4 px-6 font-bold text-[#111111]">{apt.patient_name || "Patient"}</td>
+                    <td className="py-4 px-6 font-bold text-[#111111]">{apt.patient_name ?? "Patient name unavailable"}</td>
                     <td className="py-4 px-6">
-                      <div className="font-semibold text-[#111111]">{apt.doctor_name || "Doctor"}</div>
-                      <div className="text-[11px] text-[#626262]">{apt.doctor_specialization || "General"}</div>
+                      <div className="font-semibold text-[#111111]">{apt.doctor_name ?? "Doctor name unavailable"}</div>
+                      <div className="text-[11px] text-[#626262]">{apt.doctor_specialization ?? "Specialization unavailable"}</div>
                     </td>
                     <td className="py-4 px-6 font-mono text-[#111111]">
                       {formatTime(apt.starts_at)} - {formatTime(apt.ends_at)}

@@ -114,12 +114,12 @@ export default function PatientDashboard() {
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-xl font-bold text-[#111111]">
-                      {upcomingAppointment.doctor_name}
+                      {upcomingAppointment.doctor_name ?? "Doctor name unavailable"}
                     </h3>
                     <StatusBadge status={upcomingAppointment.status} size="sm" />
                   </div>
                   <p className="text-sm font-medium text-[#626262]">
-                    {upcomingAppointment.doctor_specialization}
+                    {upcomingAppointment.doctor_specialization ?? "Specialization unavailable"}
                   </p>
                 </div>
               </div>
@@ -166,9 +166,11 @@ export default function PatientDashboard() {
                   <CheckCircle2 className="h-3.5 w-3.5 text-[#26734d]" />
                   <span>Integrations Status</span>
                 </div>
-                <div className="text-xs font-semibold text-[#111111]">
-                  Email & Calendar Synced
-                </div>
+                  <div className="text-xs font-semibold text-[#111111]">
+                    {upcomingAppointment.integrations && upcomingAppointment.integrations.length > 0
+                      ? `${upcomingAppointment.integrations.filter((item) => item.state === "succeeded").length} integration(s) succeeded`
+                      : "Integration status unavailable"}
+                  </div>
               </div>
             </div>
           </div>
@@ -288,13 +290,13 @@ export default function PatientDashboard() {
                   className="rounded-2xl border border-[#f0f0eb] bg-[#fbfbf8] p-4 space-y-2.5"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#111111]">{past.doctor_name}</span>
+                    <span className="text-xs font-bold text-[#111111]">{past.doctor_name ?? "Doctor name unavailable"}</span>
                     <span className="text-[11px] text-[#8e8e89]">
                       {formatDate(past.starts_at)}
                     </span>
                   </div>
                   <p className="text-xs text-[#626262] line-clamp-2">
-                    {past.symptom_summary || "Consultation completed. View visit notes."}
+                    {past.symptom_summary || "Visit details unavailable."}
                   </p>
                   {past.visit_id && (
                     <Link

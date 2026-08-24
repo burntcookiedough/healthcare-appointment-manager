@@ -48,7 +48,7 @@ import {
   IntegrationRetryRequest,
   ApiErrorEnvelope,
 } from "@/types/api";
-import { APP_TIMEZONE, formatDateOnly, formatTime } from "@/lib/dates";
+import { formatDateOnly, formatTime } from "@/lib/dates";
 import {
   getStoredSession,
   refreshSessionDeduplicated,
@@ -77,6 +77,56 @@ export const getApiBaseUrl = (): string => {
 
 let activeAuthToken: string | null = null;
 const DEFAULT_HTTP_TIMEOUT_MS = 30_000;
+
+const PRESCRIPTION_FREQUENCIES = [
+  "once_daily",
+  "twice_daily",
+  "three_times_daily",
+  "every_4_hours",
+  "as_needed",
+] as const;
+
+type PrescriptionFrequencyLiteral = (typeof PRESCRIPTION_FREQUENCIES)[number];
+
+function requireExpectedVersion(expectedVersion: number | undefined, resource: string): number {
+  if (typeof expectedVersion !== "number" || !Number.isInteger(expectedVersion) || expectedVersion < 1) {
+    throw {
+      status: 400,
+      error: {
+        code: "INVALID_REQUEST",
+        message: `A current expected_version is required to update ${resource}.`,
+      },
+      request_id: `req-version-${Date.now()}`,
+    };
+  }
+  return expectedVersion as number;
+}
+
+function asPrescriptionFrequency(value: string, itemId: string): PrescriptionFrequencyLiteral {
+  if ((PRESCRIPTION_FREQUENCIES as readonly string[]).includes(value)) {
+    return value as PrescriptionFrequencyLiteral;
+  }
+  throw {
+    status: 422,
+    error: {
+      code: "VALIDATION_FAILED",
+      message: `Prescription item ${itemId} has an unsupported frequency.`,
+      fields: [{ path: "prescription_items.frequency", code: "invalid_frequency", message: "Use a supported structured frequency." }],
+    },
+    request_id: `req-frequency-${Date.now()}`,
+  };
+}
+
+function normalizeDoctor<T extends DoctorSummary>(doctor: T): T {
+  return {
+    ...doctor,
+    name: doctor.name ?? doctor.display_name,
+    display_name: doctor.display_name ?? doctor.name,
+    timezone: doctor.timezone ?? doctor.time_zone,
+    time_zone: doctor.time_zone ?? doctor.timezone,
+    accepted_durations: doctor.accepted_durations ?? doctor.appointment_durations_minutes,
+  };
+}
 
 export function setApiAuthToken(token: string | null): void {
   activeAuthToken = token;
@@ -253,7 +303,7 @@ export const apiClient = {
   },
 
   updatePatientProfile: async (req: ProfileUpdateRequest): Promise<PatientProfile> => {
-    if (isDemoMode()) return mockDb.getPatientProfile();
+    if (isDemoMode()) return mockDb.updatePatientProfile(req);
     return requestHttp<PatientProfile>("/me/profile", {
       method: "PATCH",
       body: req,
@@ -262,7 +312,7 @@ export const apiClient = {
 
   // Doctors
   getDoctors: async (search?: string, specialization?: string): Promise<DoctorSummary[]> => {
-    if (isDemoMode()) return mockDb.getDoctors(search, specialization);
+    if (isDemoMode()) return (await mockDb.getDoctors(search, specialization)).map(normalizeDoctor);
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     params.set("active_only", "true");
@@ -274,54 +324,58 @@ export const apiClient = {
     if (specialization && specialization !== "All") {
       items = items.filter((d) => d.specialization === specialization);
     }
-    return items;
+    return items.map(normalizeDoctor);
   },
 
   getDoctorDetail: async (doctorId: string): Promise<DoctorDetail> => {
-    if (isDemoMode()) return mockDb.getDoctorDetail(doctorId);
-    return requestHttp<DoctorDetail>(`/doctors/${encodeURIComponent(doctorId)}`);
+    if (isDemoMode()) return normalizeDoctor(await mockDb.getDoctorDetail(doctorId));
+    return normalizeDoctor(await requestHttp<DoctorDetail>(`/doctors/${encodeURIComponent(doctorId)}`));
   },
 
   createDoctor: async (req: DoctorCreateRequest, options?: { idempotencyKey?: string }): Promise<DoctorDetail> => {
     if (isDemoMode()) return mockDb.createDoctor(req);
+    const displayName = req.display_name ?? req.name;
+    if (!req.subject_id || !displayName?.trim()) {
+      throw {
+        status: 400,
+        error: {
+          code: "INVALID_REQUEST",
+          message: "A verified subject_id and display name are required to provision a doctor.",
+        },
+        request_id: `req-doctor-${Date.now()}`,
+      };
+    }
     const body = {
-      subject_id: req.subject_id || `sub-doc-${Date.now()}`,
-      display_name: req.display_name || req.name || "Doctor",
-      credentials: req.credentials || null,
-      specialization: req.specialization || null,
-      timezone: req.timezone || req.time_zone || "Asia/Kolkata",
-      appointment_durations_minutes: req.appointment_durations_minutes || req.accepted_durations || [30],
+      subject_id: req.subject_id,
+      display_name: displayName,
+      credentials: req.credentials ?? null,
+      specialization: req.specialization ?? null,
+      ...(req.timezone || req.time_zone
+        ? { timezone: req.timezone ?? req.time_zone }
+        : {}),
+      ...(req.appointment_durations_minutes || req.accepted_durations
+        ? { appointment_durations_minutes: req.appointment_durations_minutes ?? req.accepted_durations }
+        : {}),
     };
-    return requestHttp<DoctorDetail>("/doctors", {
+    return normalizeDoctor(await requestHttp<DoctorDetail>("/doctors", {
       method: "POST",
       body,
       idempotent: true,
       idempotencyKey: options?.idempotencyKey,
-    });
+    }));
   },
 
   updateDoctor: async (doctorId: string, req: DoctorUpdateRequest): Promise<DoctorSummary> => {
-    if (isDemoMode()) return mockDb.getDoctorDetail(doctorId);
-    return requestHttp<DoctorSummary>(`/doctors/${encodeURIComponent(doctorId)}`, {
+    if (isDemoMode()) return normalizeDoctor(await mockDb.updateDoctor(doctorId, req));
+    return normalizeDoctor(await requestHttp<DoctorSummary>(`/doctors/${encodeURIComponent(doctorId)}`, {
       method: "PATCH",
       body: req,
-    });
+    }));
   },
 
   getDoctorWorkingHours: async (doctorId: string): Promise<WorkingHoursResponse> => {
     if (isDemoMode()) {
-      const doc = await mockDb.getDoctorDetail(doctorId);
-      return {
-        doctor_id: doc.id,
-        version: doc.schedule_version || 1,
-        timezone: doc.time_zone || doc.timezone || "Asia/Kolkata",
-        appointment_durations_minutes: doc.accepted_durations || doc.appointment_durations_minutes || [30],
-        intervals: (doc.working_hours || []).map((h) => ({
-          weekday: (h as unknown as { day_of_week?: number; weekday?: number }).day_of_week ?? (h as unknown as { weekday?: number }).weekday ?? 0,
-          starts_local: (h as unknown as { start_time?: string; starts_local?: string }).start_time ?? (h as unknown as { starts_local?: string }).starts_local ?? "09:00:00",
-          ends_local: (h as unknown as { end_time?: string; ends_local?: string }).end_time ?? (h as unknown as { ends_local?: string }).ends_local ?? "17:00:00",
-        })),
-      };
+      return mockDb.getDoctorWorkingHours(doctorId);
     }
     return requestHttp<WorkingHoursResponse>(`/doctors/${encodeURIComponent(doctorId)}/working-hours`);
   },
@@ -331,7 +385,7 @@ export const apiClient = {
     req: WorkingHoursReplaceRequest
   ): Promise<WorkingHoursResponse> => {
     if (isDemoMode()) {
-      return apiClient.getDoctorWorkingHours(doctorId);
+      return mockDb.replaceDoctorWorkingHours(doctorId, req);
     }
     return requestHttp<WorkingHoursResponse>(`/doctors/${encodeURIComponent(doctorId)}/working-hours`, {
       method: "PUT",
@@ -342,7 +396,7 @@ export const apiClient = {
   getDoctorAvailability: async (
     doctorId: string,
     targetDate: Date,
-    durationMinutes = 30
+    durationMinutes: number
   ): Promise<AvailabilitySlot[]> => {
     if (isDemoMode()) return mockDb.getDoctorAvailability(doctorId, targetDate, durationMinutes);
     const dateStr = formatDateOnly(targetDate, "Asia/Kolkata");
@@ -427,7 +481,11 @@ export const apiClient = {
   ): Promise<AppointmentSummary> => {
     if (isDemoMode()) {
       const reasonStr = typeof reasonOrRequest === "string" ? reasonOrRequest : reasonOrRequest.note || reasonOrRequest.reason_code;
-      return mockDb.cancelAppointment(appointmentId, reasonStr, cancelledBy);
+      const expectedVersion =
+        typeof reasonOrRequest === "string"
+          ? requireExpectedVersion(options?.expectedVersion, "the appointment")
+          : reasonOrRequest.expected_version;
+      return mockDb.cancelAppointment(appointmentId, reasonStr, cancelledBy, expectedVersion);
     }
 
     let payload: AppointmentCancelRequest;
@@ -437,12 +495,15 @@ export const apiClient = {
       else if (cancelledBy === "admin") code = "admin_request";
 
       payload = {
-        expected_version: options?.expectedVersion ?? 1,
+        expected_version: requireExpectedVersion(options?.expectedVersion, "the appointment"),
         reason_code: code,
         note: reasonOrRequest,
       };
     } else {
-      payload = reasonOrRequest;
+      payload = {
+        ...reasonOrRequest,
+        expected_version: requireExpectedVersion(reasonOrRequest.expected_version, "the appointment"),
+      };
     }
 
     return requestHttp<AppointmentSummary>(`/appointments/${encodeURIComponent(appointmentId)}/cancel`, {
@@ -456,23 +517,30 @@ export const apiClient = {
   rescheduleAppointment: async (
     appointmentId: string,
     newStartsAtOrRequest: string | AppointmentRescheduleRequest,
-    durationMinutes = 30,
+    durationMinutes: number,
     options?: { expectedVersion?: number; idempotencyKey?: string }
   ): Promise<AppointmentSummary> => {
     if (isDemoMode()) {
       const starts = typeof newStartsAtOrRequest === "string" ? newStartsAtOrRequest : newStartsAtOrRequest.starts_at;
       const dur = typeof newStartsAtOrRequest === "string" ? durationMinutes : newStartsAtOrRequest.duration_minutes;
-      return mockDb.rescheduleAppointment(appointmentId, starts, dur);
+      const expectedVersion =
+        typeof newStartsAtOrRequest === "string"
+          ? requireExpectedVersion(options?.expectedVersion, "the appointment")
+          : newStartsAtOrRequest.expected_version;
+      return mockDb.rescheduleAppointment(appointmentId, starts, dur, expectedVersion);
     }
 
     const payload: AppointmentRescheduleRequest =
       typeof newStartsAtOrRequest === "string"
         ? {
-            expected_version: options?.expectedVersion ?? 1,
+            expected_version: requireExpectedVersion(options?.expectedVersion, "the appointment"),
             starts_at: newStartsAtOrRequest,
             duration_minutes: durationMinutes,
           }
-        : newStartsAtOrRequest;
+        : {
+            ...newStartsAtOrRequest,
+            expected_version: requireExpectedVersion(newStartsAtOrRequest.expected_version, "the appointment"),
+          };
 
     return requestHttp<AppointmentSummary>(`/appointments/${encodeURIComponent(appointmentId)}/reschedule`, {
       method: "POST",
@@ -532,7 +600,15 @@ export const apiClient = {
     doctorId?: string,
     options?: { idempotencyKey?: string }
   ): Promise<Visit> => {
-    if (isDemoMode()) return mockDb.getOrCreateVisitForAppointment(appointmentId, doctorId || "");
+    if (isDemoMode()) {
+      if (!doctorId) {
+        throw {
+          status: 400,
+          error: { code: "INVALID_REQUEST", message: "A doctor profile is required to create a visit." },
+        };
+      }
+      return mockDb.getOrCreateVisitForAppointment(appointmentId, doctorId);
+    }
     return requestHttp<Visit>(`/appointments/${encodeURIComponent(appointmentId)}/visit`, {
       method: "POST",
       idempotent: true,
@@ -549,32 +625,38 @@ export const apiClient = {
   ): Promise<Visit> => {
     if (isDemoMode()) {
       const notes = typeof notesOrRequest === "string" ? notesOrRequest : notesOrRequest.notes_text;
-      const diag = typeof notesOrRequest === "string" ? (diagnosis || "") : "";
+      const diag = typeof notesOrRequest === "string" ? (diagnosis || "") : (notesOrRequest.advisory_text ?? "");
       const items = typeof notesOrRequest === "string" ? (prescriptionItems || []) : (notesOrRequest.prescription_items as PrescriptionItem[] || []);
-      return mockDb.saveVisitDraft(visitId, notes, diag, items);
+      const expectedVersion =
+        typeof notesOrRequest === "string"
+          ? requireExpectedVersion(options?.expectedVersion, "the visit")
+          : notesOrRequest.expected_version;
+      return mockDb.saveVisitDraft(visitId, notes, diag, items, expectedVersion);
     }
 
     const payload: VisitUpdateRequest =
       typeof notesOrRequest === "string"
         ? {
-            expected_version: options?.expectedVersion ?? 1,
+            expected_version: requireExpectedVersion(options?.expectedVersion, "the visit"),
             notes_text: notesOrRequest,
-            urgency: null,
             prescription_items: prescriptionItems
               ? prescriptionItems.map((item) => ({
                   medication_name: item.medication_name,
                   dosage: item.dosage,
                   route: item.route,
-                  frequency: (item.frequency as unknown as "once_daily" | "twice_daily" | "three_times_daily" | "every_4_hours" | "as_needed") || "once_daily",
-                  start_date: item.start_date || new Date().toISOString().split("T")[0],
-                  end_date: item.end_date || null,
-                  duration_days: item.duration_days || null,
-                  instructions: item.instructions || "",
+                  frequency: asPrescriptionFrequency(item.frequency, item.id),
+                  start_date: item.start_date,
+                  end_date: item.end_date ?? null,
+                  duration_days: item.duration_days ?? null,
+                  instructions: item.instructions,
                 }))
               : null,
-            advisory_text: diagnosis || null,
+            advisory_text: diagnosis ?? null,
           }
-        : notesOrRequest;
+        : {
+            ...notesOrRequest,
+            expected_version: requireExpectedVersion(notesOrRequest.expected_version, "the visit"),
+          };
 
     return requestHttp<Visit>(`/visits/${encodeURIComponent(visitId)}`, {
       method: "PATCH",
@@ -591,17 +673,20 @@ export const apiClient = {
     options?: { expectedVersion?: number; idempotencyKey?: string }
   ): Promise<Visit> => {
     if (isDemoMode()) {
+      const expectedVersion = requireExpectedVersion(options?.expectedVersion, "the visit");
       return mockDb.completeVisit(
         visitId,
         notes || "",
         diagnosis || "",
         prescriptionItems || [],
-        followUpInstructions
+        followUpInstructions,
+        expectedVersion
       );
     }
+    const expectedVersion = requireExpectedVersion(options?.expectedVersion, "the visit");
     return requestHttp<Visit>(`/visits/${encodeURIComponent(visitId)}/complete`, {
       method: "POST",
-      body: { expected_version: options?.expectedVersion ?? 1 },
+      body: { expected_version: expectedVersion },
       idempotent: true,
       idempotencyKey: options?.idempotencyKey,
     });
@@ -614,13 +699,13 @@ export const apiClient = {
     options?: { expectedVersion?: number; idempotencyKey?: string }
   ): Promise<Visit> => {
     if (isDemoMode()) {
-      const visit = await mockDb.getVisit(visitId);
-      return visit;
+      return mockDb.amendVisit(visitId, reason, notesText, requireExpectedVersion(options?.expectedVersion, "the visit"));
     }
+    const expectedVersion = requireExpectedVersion(options?.expectedVersion, "the visit");
     return requestHttp<Visit>(`/visits/${encodeURIComponent(visitId)}/amendments`, {
       method: "POST",
       body: {
-        expected_version: options?.expectedVersion ?? 1,
+        expected_version: expectedVersion,
         reason,
         notes_text: notesText,
       },
@@ -631,36 +716,14 @@ export const apiClient = {
 
   // Reminders
   getReminderPreferences: async (): Promise<ReminderPreferencesResponse> => {
-    if (isDemoMode()) {
-      return {
-        patient_id: "pat-001-aarav",
-        version: 1,
-        enabled: true,
-        channel: "email",
-        timezone: "Asia/Kolkata",
-        local_times: ["08:00:00", "20:00:00"],
-        created_at: "2026-08-24T00:00:00Z",
-        updated_at: "2026-08-24T00:00:00Z",
-      };
-    }
+    if (isDemoMode()) return mockDb.getReminderPreferences();
     return requestHttp<ReminderPreferencesResponse>("/me/reminder-preferences");
   },
 
   updateReminderPreferences: async (
     req: ReminderPreferencesRequest
   ): Promise<ReminderPreferencesResponse> => {
-    if (isDemoMode()) {
-      return {
-        patient_id: "pat-001-aarav",
-        version: req.expected_version + 1,
-        enabled: req.enabled,
-        channel: req.channel,
-        timezone: req.timezone,
-        local_times: req.local_times,
-        created_at: "2026-08-24T00:00:00Z",
-        updated_at: new Date().toISOString(),
-      };
-    }
+    if (isDemoMode()) return mockDb.updateReminderPreferences(req);
     return requestHttp<ReminderPreferencesResponse>("/me/reminder-preferences", {
       method: "PUT",
       body: req,
@@ -685,32 +748,32 @@ export const apiClient = {
     // The appointments collection is already scoped to the authenticated patient by the API.
     const appointments = await apiClient.getAppointments("completed");
     if (appointments.length === 0) return [];
-    const preferences = await apiClient.getReminderPreferences();
-    const timezone = preferences.timezone || APP_TIMEZONE;
+    const preferences = await apiClient.getReminderPreferences().catch(() => null);
+    const timezone = preferences?.timezone;
+    if (!timezone) return [];
     const today = formatDateOnly(new Date(), timezone);
-    const visits = await Promise.all(appointments.map((appointment) => apiClient.getVisit(appointment.id)));
+    const visits = await Promise.allSettled(appointments.map((appointment) => apiClient.getVisit(appointment.id)));
     const prescriptions = visits
-      .map((visit) => visit.prescription)
+      .filter((result): result is PromiseFulfilledResult<Visit> => result.status === "fulfilled")
+      .map((result) => result.value.prescription)
       .filter((prescription): prescription is NonNullable<Visit["prescription"]> => Boolean(prescription));
-    const schedules = await Promise.all(
+    const schedules = await Promise.allSettled(
       prescriptions.map(async (prescription) => ({
         prescription,
         schedule: await apiClient.getReminderSchedule(prescription.id, 365),
       }))
     );
 
-    return schedules.flatMap(({ prescription, schedule }) =>
-      schedule.items
-        .filter((occurrence) => formatDateOnly(occurrence.occurrence_at, timezone) === today)
-        .map((occurrence) => {
-          if (!occurrence.prescription_item_id) {
-            throw new Error("Reminder schedule omitted its prescription item identity.");
-          }
+    return schedules.flatMap((result) => {
+      if (result.status !== "fulfilled") return [];
+      const { prescription, schedule } = result.value;
+      const occurrences = Array.isArray(schedule.items) ? schedule.items : [];
+      return occurrences.flatMap((occurrence) => {
+        try {
+          if (!occurrence.prescription_item_id) return [];
           const item = prescription.items.find((candidate) => candidate.id === occurrence.prescription_item_id);
-          if (!item) {
-            throw new Error("Reminder schedule referenced an unknown prescription item.");
-          }
-          return {
+          if (!item || formatDateOnly(occurrence.occurrence_at, timezone) !== today) return [];
+          return [{
             id: `rem-${prescription.id}-${occurrence.prescription_item_id}-${occurrence.occurrence_at}`,
             prescription_item_id: item.id,
             medication_name: item.medication_name,
@@ -719,10 +782,13 @@ export const apiClient = {
             scheduled_date: formatDateOnly(occurrence.occurrence_at, timezone),
             taken: occurrence.status.toLowerCase() === "taken",
             instructions: item.instructions,
-            route: item.route || "Oral",
-          } satisfies MedicationReminder;
-        })
-    );
+            route: item.route ?? "Route not provided",
+          } satisfies MedicationReminder];
+        } catch {
+          return [];
+        }
+      });
+    });
   },
 
   // Doctor Leave
@@ -748,27 +814,7 @@ export const apiClient = {
         body: req,
       }
     );
-    return {
-      ...impact,
-      affected_holds_count: impact.affected_hold_count,
-      affected_appointments: impact.affected_appointment_ids.map((id) => ({
-        id,
-        version: 1,
-        patient_id: "unknown",
-        patient_name: "Patient",
-        doctor_id: doctorId,
-        doctor_name: "Doctor",
-        doctor_specialization: "General",
-        starts_at: impact.starts_at,
-        ends_at: impact.ends_at,
-        status: "confirmed",
-        integrations: [],
-        created_at: impact.starts_at,
-        updated_at: impact.starts_at,
-      })),
-      schedule_version: impact.expected_schedule_version,
-      reason: req.reason || "",
-    };
+    return impact;
   },
 
   applyDoctorLeave: async (
@@ -779,11 +825,15 @@ export const apiClient = {
     req: LeaveApplyRequest,
     options?: { idempotencyKey?: string }
   ): Promise<DoctorLeave> => {
-    if (isDemoMode()) return mockDb.applyDoctorLeave(doctorId, startsAt, endsAt, reason || "", req);
+    if (isDemoMode()) return mockDb.applyDoctorLeave(doctorId, startsAt, endsAt, reason ?? req.reason ?? null, req);
+    const expectedVersion = requireExpectedVersion(
+      req.expected_version ?? req.expected_schedule_version,
+      "the doctor schedule"
+    );
     const body: LeaveApplyRequest = {
       preview_token: req.preview_token,
-      expected_version: req.expected_version ?? req.expected_schedule_version ?? 1,
-      reason: reason || req.reason || null,
+      expected_version: expectedVersion,
+      reason: reason ?? req.reason ?? null,
     };
     return requestHttp<DoctorLeave>(`/doctors/${encodeURIComponent(doctorId)}/leave`, {
       method: "POST",
@@ -809,12 +859,13 @@ export const apiClient = {
   retryIntegration: async (
     operationId: string,
     options?: { expectedVersion?: number; idempotencyKey?: string }
-  ): Promise<AdminIntegrationItem> => {
-    if (isDemoMode()) return mockDb.retryIntegration(operationId);
+  ): Promise<IntegrationStatus> => {
+    const expectedVersion = requireExpectedVersion(options?.expectedVersion, "the integration operation");
+    if (isDemoMode()) return mockDb.retryIntegration(operationId, expectedVersion);
     const payload: IntegrationRetryRequest = {
-      expected_version: options?.expectedVersion ?? 1,
+      expected_version: expectedVersion,
     };
-    const res = await requestHttp<IntegrationStatus>(
+    return requestHttp<IntegrationStatus>(
       `/admin/integrations/${encodeURIComponent(operationId)}/retry`,
       {
         method: "POST",
@@ -823,12 +874,6 @@ export const apiClient = {
         idempotencyKey: options?.idempotencyKey,
       }
     );
-    return {
-      ...res,
-      operation_id: res.id,
-      max_attempts: 5,
-      payload_summary: "Integration retry operation",
-    };
   },
 
   // Health

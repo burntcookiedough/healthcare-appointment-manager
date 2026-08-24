@@ -78,6 +78,9 @@ export default function AdminLeavePage() {
       if (!isValidDoctorSelected) {
         throw new Error("No valid doctor selected");
       }
+      if (!startDateStr || !endDateStr) {
+        throw new Error("Leave start and end times are required");
+      }
       const startsAtISO = parseLocalISTToUTCISO(startDateStr);
       const endsAtISO = parseLocalISTToUTCISO(endDateStr);
       return apiClient.previewDoctorLeave(selectedDoctorId, {
@@ -100,6 +103,10 @@ export default function AdminLeavePage() {
   const applyMutation = useMutation({
     mutationFn: async () => {
       if (!previewResult) throw new Error("No preview token available");
+      const expectedVersion = previewResult.expected_schedule_version ?? previewResult.schedule_version;
+      if (typeof expectedVersion !== "number" || !Number.isInteger(expectedVersion) || expectedVersion < 1) {
+        throw new Error("The preview did not include a current doctor schedule version");
+      }
       return apiClient.applyDoctorLeave(
         previewResult.doctor_id,
         previewResult.starts_at,
@@ -107,13 +114,13 @@ export default function AdminLeavePage() {
         leaveReason,
         {
           preview_token: previewResult.preview_token,
-          expected_schedule_version: previewResult.schedule_version,
+          expected_version: expectedVersion,
         }
       );
     },
     onSuccess: (_newLeave) => {
       toast.success(
-        `Leave scheduled successfully. ${previewResult?.affected_appointments.length || 0} affected appointment(s) updated to cancelled_doctor_leave.`
+        `Leave scheduled successfully. ${previewResult?.affected_appointment_count ?? previewResult?.affected_appointment_ids?.length ?? previewResult?.affected_appointments?.length ?? 0} affected appointment(s) updated to cancelled_doctor_leave.`
       );
       setIsPreviewDialogOpen(false);
       setPreviewResult(null);
@@ -147,10 +154,17 @@ export default function AdminLeavePage() {
       toast.error("Please enter a reason for the leave.");
       return;
     }
+    if (!startDateStr || !endDateStr) {
+      toast.error("Please select both leave start and end times.");
+      return;
+    }
     previewMutation.mutate();
   };
 
   const selectedDoctor = doctors?.find((d) => d.id === selectedDoctorId);
+  const affectedAppointmentIds = previewResult?.affected_appointment_ids ?? previewResult?.affected_appointments?.map((appointment) => appointment.id) ?? [];
+  const affectedAppointmentCount = previewResult?.affected_appointment_count ?? affectedAppointmentIds.length;
+  const affectedHoldCount = previewResult?.affected_hold_count ?? previewResult?.affected_holds_count ?? previewResult?.affected_hold_ids?.length ?? 0;
 
   return (
     <div className="space-y-8">
@@ -315,7 +329,7 @@ export default function AdminLeavePage() {
             <DialogTitle>Leave Impact Preview & Confirmation</DialogTitle>
             <DialogDescription>
               Review the affected appointments and holds that will be automatically updated upon applying leave for{" "}
-              <strong>{selectedDoctor?.name || (selectedDoctorId ? `Doctor (${selectedDoctorId})` : "the selected doctor")}</strong>.
+              <strong>{selectedDoctor?.name ?? selectedDoctor?.display_name ?? (selectedDoctorId ? `Doctor (${selectedDoctorId})` : "the selected doctor")}</strong>.
             </DialogDescription>
           </DialogHeader>
 
@@ -326,13 +340,13 @@ export default function AdminLeavePage() {
                 <div>
                   <span className="text-[#8e8e89] block">Affected Confirmed Appts:</span>
                   <span className="text-xl font-black text-[#b42318]">
-                    {previewResult.affected_appointments.length}
+                    {affectedAppointmentCount}
                   </span>
                 </div>
                 <div>
                   <span className="text-[#8e8e89] block">Affected Active Holds:</span>
                   <span className="text-xl font-black text-[#b54708]">
-                    {previewResult.affected_holds_count}
+                    {affectedHoldCount}
                   </span>
                 </div>
               </div>
@@ -343,18 +357,16 @@ export default function AdminLeavePage() {
                   Appointments that will transition to &quot;cancelled_doctor_leave&quot;:
                 </span>
 
-                {previewResult.affected_appointments.length > 0 ? (
+                {affectedAppointmentIds.length > 0 ? (
                   <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                    {previewResult.affected_appointments.map((apt) => (
+                    {affectedAppointmentIds.map((appointmentId) => (
                       <div
-                        key={apt.id}
+                        key={appointmentId}
                         className="flex items-center justify-between p-3 rounded-xl border border-[#EBCFC2] bg-[#F8ECE6]"
                       >
                         <div>
-                          <div className="font-bold text-[#171815]">{apt.patient_name}</div>
-                          <div className="text-[11px] text-[#666861]">
-                            {formatDateTime(apt.starts_at)}
-                          </div>
+                          <div className="font-bold text-[#171815]">Appointment {appointmentId}</div>
+                          <div className="text-[11px] text-[#666861]">Appointment details unavailable in the preview response.</div>
                         </div>
                         <span className="rounded-lg bg-white border border-[#EBCFC2] px-2 py-0.5 text-[10px] font-bold text-[#7A4636]">
                           Will Cancel

@@ -40,7 +40,8 @@ export default function PatientAppointmentDetailPage() {
   const params = useParams();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const appointmentId = (params?.id as string) || "apt-001-upcoming";
+  const rawId = params?.id;
+  const appointmentId = typeof rawId === "string" && rawId.trim() !== "" ? rawId : "";
 
   const [isCancelDialogOpen, setIsCancelDialogOpen] = React.useState(false);
   const [cancelReason, setCancelReason] = React.useState(CANCEL_REASONS[0].value);
@@ -53,23 +54,32 @@ export default function PatientAppointmentDetailPage() {
   const { data: appointment, isLoading, error } = useQuery({
     queryKey: ["appointment-detail", appointmentId],
     queryFn: () => apiClient.getAppointmentDetail(appointmentId),
+    enabled: Boolean(appointmentId),
   });
+
+  const appointmentDurationMinutes = React.useMemo(() => {
+    if (!appointment) return null;
+    const startsAt = new Date(appointment.starts_at).getTime();
+    const endsAt = new Date(appointment.ends_at).getTime();
+    const duration = (endsAt - startsAt) / 60000;
+    return Number.isFinite(duration) && Number.isInteger(duration) && duration > 0 ? duration : null;
+  }, [appointment]);
 
   // Query availability for rescheduling
   const { data: rescheduleSlots, isLoading: isReschedSlotsLoading } = useQuery({
-    queryKey: ["reschedule-slots", appointment?.doctor_id, formatDateOnly(rescheduleDate, "Asia/Kolkata")],
+    queryKey: ["reschedule-slots", appointment?.doctor_id, appointmentDurationMinutes, formatDateOnly(rescheduleDate, "Asia/Kolkata")],
     queryFn: () =>
-      appointment
-        ? apiClient.getDoctorAvailability(appointment.doctor_id, rescheduleDate, 30)
+      appointment && appointmentDurationMinutes
+        ? apiClient.getDoctorAvailability(appointment.doctor_id, rescheduleDate, appointmentDurationMinutes)
         : Promise.resolve([]),
-    enabled: Boolean(isRescheduleDialogOpen && appointment),
+    enabled: Boolean(isRescheduleDialogOpen && appointment && appointmentDurationMinutes),
   });
 
   // Cancel Mutation
   const cancelMutation = useMutation({
     mutationFn: async () => {
       return apiClient.cancelAppointment(appointmentId, cancelReason, "patient", {
-        expectedVersion: appointment?.version ?? 1,
+        expectedVersion: appointment?.version,
       });
     },
     onSuccess: () => {
@@ -94,8 +104,9 @@ export default function PatientAppointmentDetailPage() {
   const rescheduleMutation = useMutation({
     mutationFn: async () => {
       if (!rescheduleSlot) throw new Error("Please select a new time slot");
-      return apiClient.rescheduleAppointment(appointmentId, rescheduleSlot, 30, {
-        expectedVersion: appointment?.version ?? 1,
+      if (!appointmentDurationMinutes) throw new Error("Appointment duration is unavailable");
+      return apiClient.rescheduleAppointment(appointmentId, rescheduleSlot, appointmentDurationMinutes, {
+        expectedVersion: appointment?.version,
       });
     },
     onSuccess: () => {
@@ -118,7 +129,7 @@ export default function PatientAppointmentDetailPage() {
 
   if (isLoading) return <CardSkeleton />;
 
-  if (error || !appointment) {
+  if (!appointmentId || error || !appointment) {
     return (
       <EmptyState
         icon={AlertTriangle}
@@ -153,10 +164,10 @@ export default function PatientAppointmentDetailPage() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-[#111111]">{appointment.doctor_name}</h1>
+                <h1 className="text-xl font-bold text-[#111111]">{appointment.doctor_name ?? "Doctor name unavailable"}</h1>
                 <StatusBadge status={appointment.status} size="sm" />
               </div>
-              <p className="text-sm text-[#626262]">{appointment.doctor_specialization}</p>
+              <p className="text-sm text-[#626262]">{appointment.doctor_specialization ?? "Specialization unavailable"}</p>
             </div>
           </div>
 
@@ -237,7 +248,7 @@ export default function PatientAppointmentDetailPage() {
             Notifications & Integrations State
           </h3>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {appointment.integrations.map((item) => (
+            {(appointment.integrations ?? []).map((item) => (
               <div
                 key={item.id}
                 className="flex items-center justify-between rounded-xl border border-[#e7e7e2] bg-white p-3 text-xs"
@@ -255,6 +266,9 @@ export default function PatientAppointmentDetailPage() {
                 <StatusBadge status={item.state} size="sm" />
               </div>
             ))}
+            {(!appointment.integrations || appointment.integrations.length === 0) && (
+              <p className="text-xs text-[#626262]">Integration status unavailable.</p>
+            )}
           </div>
         </div>
 
@@ -284,7 +298,7 @@ export default function PatientAppointmentDetailPage() {
             <DialogTitle>Cancel Appointment</DialogTitle>
             <DialogDescription>
               Are you sure you want to cancel your consultation with{" "}
-              <strong>{appointment.doctor_name}</strong> on{" "}
+              <strong>{appointment.doctor_name ?? "Doctor name unavailable"}</strong> on{" "}
               <strong>{formatDateTime(appointment.starts_at)}</strong>?
             </DialogDescription>
           </DialogHeader>
@@ -326,7 +340,7 @@ export default function PatientAppointmentDetailPage() {
           <DialogHeader>
             <DialogTitle>Reschedule Appointment</DialogTitle>
             <DialogDescription>
-              Select a new available date and time with <strong>{appointment.doctor_name}</strong>.
+              Select a new available date and time with <strong>{appointment.doctor_name ?? "Doctor name unavailable"}</strong>.
             </DialogDescription>
           </DialogHeader>
 

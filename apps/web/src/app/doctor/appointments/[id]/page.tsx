@@ -26,12 +26,14 @@ import { toast } from "sonner";
 export default function DoctorAppointmentWorkspacePage() {
   const params = useParams();
   const router = useRouter();
-  const appointmentId = (params?.id as string) || "apt-001-upcoming";
+  const rawId = params?.id;
+  const appointmentId = typeof rawId === "string" && rawId.trim() !== "" ? rawId : "";
 
   // Query appointment detail
   const { data: appointment, isLoading, error } = useQuery({
     queryKey: ["doctor-appointment-workspace", appointmentId],
     queryFn: () => apiClient.getAppointmentDetail(appointmentId),
+    enabled: Boolean(appointmentId),
   });
 
   // Mutation to start consultation / open visit draft
@@ -50,7 +52,7 @@ export default function DoctorAppointmentWorkspacePage() {
 
   if (isLoading) return <CardSkeleton />;
 
-  if (error || !appointment) {
+  if (!appointmentId || error || !appointment) {
     return (
       <EmptyState
         icon={AlertCircle}
@@ -83,7 +85,7 @@ export default function DoctorAppointmentWorkspacePage() {
             <div className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-2.5">
                 <h1 className="text-2xl font-black text-[#171815]">
-                  {appointment.patient_name}
+                  {appointment.patient_name ?? "Patient name unavailable"}
                 </h1>
                 {(appointment.patient_age !== undefined && appointment.patient_age !== null) || appointment.patient_gender ? (
                   <span className="text-sm font-semibold text-[#666861]">
@@ -96,7 +98,7 @@ export default function DoctorAppointmentWorkspacePage() {
                 <UrgencyBadge urgency={appointment.urgency || undefined} />
               </div>
               <p className="text-xs text-[#666861] mt-0.5">
-                Patient ID: {appointment.patient_id} • Booking: {appointment.id}
+                 Patient ID: {appointment.patient_id} • Booking: {appointment.id}
               </p>
             </div>
           </div>

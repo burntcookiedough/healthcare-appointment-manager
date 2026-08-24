@@ -124,10 +124,10 @@ export default function PatientAppointmentsPage() {
                 </div>
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <h3 className="text-base font-bold text-[#111111]">{apt.doctor_name}</h3>
+                    <h3 className="text-base font-bold text-[#111111]">{apt.doctor_name ?? "Doctor name unavailable"}</h3>
                     <StatusBadge status={apt.status} size="sm" />
                   </div>
-                  <p className="text-xs font-medium text-[#626262]">{apt.doctor_specialization}</p>
+                  <p className="text-xs font-medium text-[#626262]">{apt.doctor_specialization ?? "Specialization unavailable"}</p>
 
                   <div className="flex flex-wrap items-center gap-4 text-xs text-[#626262] pt-1">
                     <span className="flex items-center gap-1">

@@ -19,15 +19,13 @@ import {
   AlertCircle,
 } from "lucide-react";
 
-const DURATION_OPTIONS = [15, 30, 45];
-
 export default function DoctorDetailPage() {
   const params = useParams();
   const router = useRouter();
   const rawId = params?.id;
   const doctorId = typeof rawId === "string" && rawId.trim() !== "" ? rawId : "";
 
-  const [selectedDuration, setSelectedDuration] = React.useState<number>(30);
+  const [selectedDuration, setSelectedDuration] = React.useState<number | null>(null);
   const [selectedDate, setSelectedDate] = React.useState<Date>(() => new Date());
 
   // Query Doctor Profile
@@ -37,14 +35,26 @@ export default function DoctorDetailPage() {
     enabled: Boolean(doctorId),
   });
 
+  const durationOptions = React.useMemo(
+    () => (doctor?.appointment_durations_minutes ?? doctor?.accepted_durations ?? [])
+      .filter((duration) => Number.isInteger(duration) && duration > 0),
+    [doctor]
+  );
+
+  React.useEffect(() => {
+    if (durationOptions.length > 0 && (!selectedDuration || !durationOptions.includes(selectedDuration))) {
+      setSelectedDuration(durationOptions[0]);
+    }
+  }, [durationOptions, selectedDuration]);
+
   // Query Availability Slots
   const { data: slots, isLoading: isSlotsLoading } = useQuery({
     queryKey: ["doctor-slots", doctorId, selectedDate.toISOString().split("T")[0], selectedDuration],
     queryFn: () =>
-      doctorId
+      doctorId && selectedDuration
         ? apiClient.getDoctorAvailability(doctorId, selectedDate, selectedDuration)
         : Promise.resolve([]),
-    enabled: Boolean(doctorId && doctor),
+    enabled: Boolean(doctorId && doctor && selectedDuration),
   });
 
   // Next 7 days helper
@@ -114,22 +124,24 @@ export default function DoctorDetailPage() {
 
           <div className="space-y-2 flex-1">
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-black text-[#171815]">{doctor.name}</h1>
+             <h1 className="text-2xl font-black text-[#171815]">{doctor.name ?? doctor.display_name ?? "Doctor name unavailable"}</h1>
               <span className="rounded-lg bg-[#EEF5EF] border border-[#D8E7DB] px-2.5 py-0.5 text-xs font-semibold text-[#315B43]">
-                {doctor.specialization}
+                {doctor.specialization ?? "Specialization unavailable"}
               </span>
             </div>
-            <p className="text-sm font-medium text-[#666861]">{doctor.credentials}</p>
-            <p className="text-sm text-[#171815] leading-relaxed max-w-3xl pt-1">
-              {doctor.biography}
-            </p>
+             {doctor.credentials && <p className="text-sm font-medium text-[#666861]">{doctor.credentials}</p>}
+             {doctor.biography && (
+               <p className="text-sm text-[#171815] leading-relaxed max-w-3xl pt-1">
+                 {doctor.biography}
+               </p>
+             )}
           </div>
 
           <div className="rounded-xl border border-[#E5E4DE] bg-[#FBFBF8] p-4 text-center sm:min-w-[160px] space-y-1">
             <span className="text-[11px] font-medium text-[#666861] block">Consultation Fee</span>
-            <span className="text-2xl font-black text-[#171815]">
-              {formatCurrencyINR(doctor.consultation_fee ?? 1000)}
-            </span>
+             <span className="text-sm font-bold text-[#171815]">
+               {doctor.consultation_fee !== undefined ? formatCurrencyINR(doctor.consultation_fee) : "Fee unavailable"}
+             </span>
             <span className="text-[10px] text-[#666861] block">per session</span>
           </div>
         </div>
@@ -139,19 +151,19 @@ export default function DoctorDetailPage() {
           <div className="flex items-center gap-2 text-[#666861]">
             <Award className="h-4 w-4 text-[#315B43]" />
             <span>
-              Experience: <strong className="text-[#171815]">{doctor.experience_years ?? 5} Years</strong>
+               Experience: <strong className="text-[#171815]">{doctor.experience_years !== undefined ? `${doctor.experience_years} Years` : "Not provided"}</strong>
             </span>
           </div>
           <div className="flex items-center gap-2 text-[#666861]">
             <Globe className="h-4 w-4 text-[#315B43]" />
             <span>
-              Languages: <strong className="text-[#171815]">{(doctor.languages || ["English", "Hindi"]).join(", ")}</strong>
+               Languages: <strong className="text-[#171815]">{doctor.languages?.length ? doctor.languages.join(", ") : "Not provided"}</strong>
             </span>
           </div>
           <div className="flex items-center gap-2 text-[#666861]">
             <Clock className="h-4 w-4 text-[#315B43]" />
             <span>
-              Timezone: <strong className="text-[#171815]">{doctor.timezone || doctor.time_zone || "Asia/Kolkata"}</strong>
+               Timezone: <strong className="text-[#171815]">{doctor.timezone ?? doctor.time_zone ?? "Not provided"}</strong>
             </span>
           </div>
         </div>
@@ -174,7 +186,7 @@ export default function DoctorDetailPage() {
             Duration
           </label>
           <div className="flex flex-wrap items-center gap-2">
-            {DURATION_OPTIONS.map((dur) => (
+            {durationOptions.length > 0 ? durationOptions.map((dur) => (
               <button
                 key={dur}
                 onClick={() => setSelectedDuration(dur)}
@@ -186,7 +198,7 @@ export default function DoctorDetailPage() {
               >
                 {dur} Minutes
               </button>
-            ))}
+            )) : <p className="text-xs text-[#626262]">Consultation durations unavailable.</p>}
           </div>
         </div>
 
@@ -232,6 +244,12 @@ export default function DoctorDetailPage() {
               <div className="h-12 bg-[#f0f0eb] rounded-xl animate-pulse" />
               <div className="h-12 bg-[#f0f0eb] rounded-xl animate-pulse" />
             </div>
+          ) : !selectedDuration ? (
+            <EmptyState
+              icon={Clock}
+              title="Consultation duration unavailable"
+              description="This doctor has not published an accepted appointment duration yet."
+            />
           ) : slots && slots.length > 0 ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
               {slots.map((slot, i) => {

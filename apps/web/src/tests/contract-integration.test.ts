@@ -10,6 +10,7 @@ import { setStoredSession, clearStoredSession } from "@/features/auth/supabase-a
 
 describe("FastAPI Contract Integration & Wire Accuracy Suite", () => {
   const originalEnv = { ...process.env };
+  const originalFetch = globalThis.fetch;
   const mockFetch = vi.fn();
 
   beforeEach(() => {
@@ -26,6 +27,7 @@ describe("FastAPI Contract Integration & Wire Accuracy Suite", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    globalThis.fetch = originalFetch;
   });
 
   it("1. Doctor search uses ?search= parameter and parses { items, next_cursor } collection envelope", async () => {
@@ -610,6 +612,68 @@ describe("FastAPI Contract Integration & Wire Accuracy Suite", () => {
       expect(mockFetch.mock.calls[3][0]).toBe(
         "http://127.0.0.1:8000/api/v1/prescriptions/rx-1/reminder-schedule?limit=365"
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("15. reminder aggregation keeps healthy occurrences when appointments, visits, schedules, or occurrences fail", async () => {
+    vi.useFakeTimers({ now: new Date("2026-08-24T12:00:00.000Z") });
+    setApiAuthToken("valid-token");
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        items: [
+          { id: "apt-good", version: 1, patient_id: "pat-1", doctor_id: "doc-1", starts_at: "2026-08-20T03:30:00Z", ends_at: "2026-08-20T04:00:00Z", status: "completed", created_at: "2026-08-19T00:00:00Z", updated_at: "2026-08-20T04:00:00Z" },
+          { id: "apt-visit-fails", version: 1, patient_id: "pat-1", doctor_id: "doc-1", starts_at: "2026-08-20T03:30:00Z", ends_at: "2026-08-20T04:00:00Z", status: "completed", created_at: "2026-08-19T00:00:00Z", updated_at: "2026-08-20T04:00:00Z" },
+          { id: "apt-schedule-fails", version: 1, patient_id: "pat-1", doctor_id: "doc-1", starts_at: "2026-08-20T03:30:00Z", ends_at: "2026-08-20T04:00:00Z", status: "completed", created_at: "2026-08-19T00:00:00Z", updated_at: "2026-08-20T04:00:00Z" },
+        ],
+        next_cursor: null,
+      }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ patient_id: "pat-1", version: 1, enabled: true, channel: "email", timezone: "Asia/Kolkata", local_times: ["08:00:00"], created_at: "2026-08-19T00:00:00Z", updated_at: "2026-08-19T00:00:00Z" }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: "visit-good", appointment_id: "apt-good", doctor_id: "doc-1", status: "completed", version: 2, prescription: { id: "rx-good", version: 1, status: "completed", items: [{ id: "rx-good-item", medication_name: "Metformin", dosage: "500 mg", route: null, frequency: "once_daily", start_date: "2026-08-20", instructions: "Take with breakfast" }] }, created_at: "2026-08-20T04:00:00Z", updated_at: "2026-08-20T04:00:00Z", completed_at: "2026-08-20T04:00:00Z" }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      statusText: "Service Unavailable",
+      json: async () => ({ error: { code: "DEPENDENCY_UNAVAILABLE", message: "Visit unavailable" } }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: "visit-schedule-fails", appointment_id: "apt-schedule-fails", doctor_id: "doc-1", status: "completed", version: 2, prescription: { id: "rx-schedule-fails", version: 1, status: "completed", items: [{ id: "rx-schedule-item", medication_name: "Atorvastatin", dosage: "10 mg", route: "oral", frequency: "once_daily", start_date: "2026-08-20", instructions: "Take at night" }] }, created_at: "2026-08-20T04:00:00Z", updated_at: "2026-08-20T04:00:00Z", completed_at: "2026-08-20T04:00:00Z" }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ prescription_id: "rx-good", items: [
+        { prescription_item_id: "rx-good-item", occurrence_at: "2026-08-24T03:30:00.000Z", status: "pending", prescription_version: 1 },
+        { prescription_item_id: "missing-item", occurrence_at: "2026-08-24T03:30:00.000Z", status: "pending", prescription_version: 1 },
+        { occurrence_at: "not-a-date", status: "pending", prescription_version: 1 },
+      ] }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      statusText: "Service Unavailable",
+      json: async () => ({ error: { code: "DEPENDENCY_UNAVAILABLE", message: "Schedule unavailable" } }),
+    });
+
+    try {
+      const reminders = await apiClient.getPatientReminders("pat-1");
+      expect(reminders).toHaveLength(1);
+      expect(reminders[0]).toMatchObject({ prescription_item_id: "rx-good-item", medication_name: "Metformin" });
     } finally {
       vi.useRealTimers();
     }

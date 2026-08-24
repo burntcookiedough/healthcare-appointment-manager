@@ -34,6 +34,7 @@ import {
 import { toast } from "sonner";
 
 const ROUTE_OPTIONS = [
+  { value: "", label: "Select route" },
   { value: "Oral", label: "Oral (Tablets/Capsules/Syrup)" },
   { value: "Topical", label: "Topical (Cream/Ointment/Lotion)" },
   { value: "Inhalation", label: "Inhalation (Inhaler/Nebulizer)" },
@@ -42,22 +43,25 @@ const ROUTE_OPTIONS = [
 ];
 
 const FREQUENCY_OPTIONS = [
-  { value: "Once daily morning", label: "Once daily in morning (08:00 AM)" },
-  { value: "Twice daily after meals", label: "Twice daily after meals (08:30 AM, 08:30 PM)" },
-  { value: "Three times daily", label: "Three times daily (08:00 AM, 02:00 PM, 08:00 PM)" },
-  { value: "Once daily at bedtime", label: "Once daily at bedtime (10:00 PM)" },
-  { value: "As needed for pain", label: "As needed (SOS / PRN)" },
+  { value: "", label: "Select frequency" },
+  { value: "once_daily", label: "Once daily (09:00 AM)" },
+  { value: "twice_daily", label: "Twice daily (09:00 AM, 09:00 PM)" },
+  { value: "three_times_daily", label: "Three times daily (08:00 AM, 02:00 PM, 08:00 PM)" },
+  { value: "every_4_hours", label: "Every 4 hours" },
+  { value: "as_needed", label: "As needed (SOS / PRN)" },
 ];
 
 export default function DoctorVisitEditorPage() {
   const params = useParams();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const visitId = (params?.id as string) || "vis-001-completed";
+  const rawId = params?.id;
+  const visitId = typeof rawId === "string" && rawId.trim() !== "" ? rawId : "";
 
   const { data: visit, isLoading, error } = useQuery({
     queryKey: ["doctor-visit", visitId],
     queryFn: () => apiClient.getVisit(visitId),
+    enabled: Boolean(visitId),
   });
 
   const [notes, setNotes] = React.useState("");
@@ -84,12 +88,12 @@ export default function DoctorVisitEditorPage() {
     const newItem: PrescriptionItem = {
       id: `rx-item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       medication_name: "",
-      dosage: "500mg",
-      route: "Oral",
-      frequency: "Twice daily after meals",
-      start_date: new Date().toISOString().split("T")[0],
-      duration_days: 7,
-      instructions: "Take with full glass of water after food",
+      dosage: "",
+      route: null,
+      frequency: "",
+      start_date: "",
+      duration_days: undefined,
+      instructions: "",
     };
     setPrescriptionItems([...prescriptionItems, newItem]);
   };
@@ -123,8 +127,20 @@ export default function DoctorVisitEditorPage() {
         toast.error(`Medication #${i + 1}: Dosage is required.`);
         return;
       }
+      if (!FREQUENCY_OPTIONS.some((option) => option.value === item.frequency && option.value !== "")) {
+        toast.error(`Medication #${i + 1}: Frequency is required.`);
+        return;
+      }
+      if (!item.start_date) {
+        toast.error(`Medication #${i + 1}: Start date is required.`);
+        return;
+      }
       if (item.duration_days === undefined || item.duration_days === null || item.duration_days <= 0) {
         toast.error(`Medication #${i + 1}: Duration must be a positive number of days.`);
+        return;
+      }
+      if (!item.instructions || item.instructions.trim().length === 0) {
+        toast.error(`Medication #${i + 1}: Instructions are required.`);
         return;
       }
     }
@@ -135,11 +151,12 @@ export default function DoctorVisitEditorPage() {
   const draftMutation = useMutation({
     mutationFn: async () => {
       return apiClient.saveVisitDraft(visitId, notes, diagnosis, prescriptionItems, {
-        expectedVersion: visit?.version ?? 1,
+        expectedVersion: visit?.version,
       });
     },
-    onSuccess: () => {
+    onSuccess: (savedVisit) => {
       toast.success("Visit draft saved.");
+      queryClient.setQueryData(["doctor-visit", visitId], savedVisit);
       queryClient.invalidateQueries({ queryKey: ["doctor-visit", visitId] });
     },
     onError: (err: { error?: { message?: string } }) => {
@@ -151,12 +168,13 @@ export default function DoctorVisitEditorPage() {
   const finalizeMutation = useMutation({
     mutationFn: async () => {
       return apiClient.completeVisit(visitId, notes, diagnosis, prescriptionItems, followUp, {
-        expectedVersion: visit?.version ?? 1,
+        expectedVersion: visit?.version,
       });
     },
-    onSuccess: () => {
+    onSuccess: (completedVisit) => {
       toast.success("Consultation completed and prescription finalized.");
       setIsFinalizeDialogOpen(false);
+      queryClient.setQueryData(["doctor-visit", visitId], completedVisit);
       queryClient.invalidateQueries({ queryKey: ["doctor-visit", visitId] });
       queryClient.invalidateQueries({ queryKey: ["doctor-appointments"] });
       router.push("/doctor");
@@ -168,7 +186,7 @@ export default function DoctorVisitEditorPage() {
 
   if (isLoading) return <CardSkeleton />;
 
-  if (error || !visit) {
+  if (!visitId || error || !visit) {
     return (
       <EmptyState
         icon={AlertCircle}
@@ -334,7 +352,7 @@ export default function DoctorVisitEditorPage() {
 
                   <Select
                     label="Route of Administration"
-                    value={item.route || "Oral"}
+                    value={item.route ?? ""}
                     disabled={isCompleted}
                     onChange={(e) => handleItemChange(item.id, "route", e.target.value)}
                     options={ROUTE_OPTIONS}

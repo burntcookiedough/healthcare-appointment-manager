@@ -20,6 +20,12 @@ import {
   MedicationReminder,
   UserContext,
   UserRole,
+  ProfileUpdateRequest,
+  DoctorUpdateRequest,
+  WorkingHoursResponse,
+  WorkingHoursReplaceRequest,
+  ReminderPreferencesResponse,
+  ReminderPreferencesRequest,
 } from "@/types/api";
 import { formatDateOnly } from "@/lib/dates";
 import {
@@ -32,6 +38,14 @@ import {
   MOCK_PRESCRIPTION,
 } from "./data/fixtures";
 import { scenarioManager } from "./scenarios";
+
+const STRUCTURED_PRESCRIPTION_FREQUENCIES = new Set([
+  "once_daily",
+  "twice_daily",
+  "three_times_daily",
+  "every_4_hours",
+  "as_needed",
+]);
 
 /**
  * Deterministic In-Memory State Store implementing API_CONTRACT.md endpoints.
@@ -47,6 +61,16 @@ class MockDatabase {
   private prescriptions: Map<string, Prescription> = new Map([["rx-001-aarav", JSON.parse(JSON.stringify(MOCK_PRESCRIPTION))]]);
   private leaves: DoctorLeave[] = JSON.parse(JSON.stringify(MOCK_LEAVES));
   private integrations: AdminIntegrationItem[] = JSON.parse(JSON.stringify(MOCK_ADMIN_INTEGRATIONS));
+  private reminderPreferences: ReminderPreferencesResponse = {
+    patient_id: "pat-001-aarav",
+    version: 1,
+    enabled: true,
+    channel: "email",
+    timezone: "Asia/Kolkata",
+    local_times: ["08:00:00", "20:00:00"],
+    created_at: "2026-08-24T00:00:00Z",
+    updated_at: "2026-08-24T00:00:00Z",
+  };
   private activeUser: UserContext = {
     subject_id: "usr-sub-pat-001",
     role: "patient",
@@ -66,6 +90,16 @@ class MockDatabase {
     this.prescriptions = new Map([["rx-001-aarav", JSON.parse(JSON.stringify(MOCK_PRESCRIPTION))]]);
     this.leaves = JSON.parse(JSON.stringify(MOCK_LEAVES));
     this.integrations = JSON.parse(JSON.stringify(MOCK_ADMIN_INTEGRATIONS));
+    this.reminderPreferences = {
+      patient_id: "pat-001-aarav",
+      version: 1,
+      enabled: true,
+      channel: "email",
+      timezone: "Asia/Kolkata",
+      local_times: ["08:00:00", "20:00:00"],
+      created_at: "2026-08-24T00:00:00Z",
+      updated_at: "2026-08-24T00:00:00Z",
+    };
     this.activeUser = {
       subject_id: "usr-sub-pat-001",
       role: "patient",
@@ -101,6 +135,53 @@ class MockDatabase {
         },
         request_id: `req-${Date.now()}`,
       };
+    }
+  }
+
+  private requireExpectedVersion(expectedVersion: number | undefined, currentVersion: number, resource: string): void {
+    if (
+      typeof expectedVersion !== "number" ||
+      !Number.isInteger(expectedVersion) ||
+      expectedVersion < 1 ||
+      expectedVersion !== currentVersion
+    ) {
+      throw {
+        status: 409,
+        error: {
+          code: "VERSION_CONFLICT",
+          message: `${resource} was updated by another request.`,
+          details: { current_version: currentVersion },
+        },
+        request_id: `req-version-${Date.now()}`,
+      };
+    }
+  }
+
+  private requireCurrentVersion(version: number | undefined, resource: string): number {
+    if (typeof version !== "number" || !Number.isInteger(version) || version < 1) {
+      throw {
+        status: 503,
+        error: { code: "DEPENDENCY_UNAVAILABLE", message: `${resource} version is unavailable.` },
+        request_id: `req-version-${Date.now()}`,
+      };
+    }
+    return version as number;
+  }
+
+  private validatePrescriptionItems(items: PrescriptionItem[]): void {
+    for (const [index, item] of items.entries()) {
+      if (!STRUCTURED_PRESCRIPTION_FREQUENCIES.has(item.frequency)) {
+        throw {
+          status: 422,
+          error: { code: "VALIDATION_FAILED", message: `Prescription item ${index + 1} has an unsupported frequency.` },
+        };
+      }
+      if (!item.start_date || !item.instructions?.trim()) {
+        throw {
+          status: 422,
+          error: { code: "VALIDATION_FAILED", message: `Prescription item ${index + 1} is missing required instructions or start date.` },
+        };
+      }
     }
   }
 
@@ -148,6 +229,20 @@ class MockDatabase {
     return { ...this.patient };
   }
 
+  public async updatePatientProfile(req: ProfileUpdateRequest): Promise<PatientProfile> {
+    await this.simulateNetwork();
+    this.requireExpectedVersion(req.expected_version, this.patient.version, "Patient profile");
+    if (req.display_name !== undefined && req.display_name !== null) {
+      this.patient.display_name = req.display_name;
+    }
+    if (req.timezone !== undefined && req.timezone !== null) {
+      this.patient.timezone = req.timezone;
+    }
+    this.patient.version += 1;
+    this.patient.updated_at = new Date().toISOString();
+    return { ...this.patient };
+  }
+
   // Doctors
   public async getDoctors(query?: string, specialization?: string): Promise<DoctorSummary[]> {
     await this.simulateNetwork();
@@ -158,7 +253,7 @@ class MockDatabase {
       .filter((doc) => doc.is_active)
       .filter((doc) => {
         if (specialization && specialization !== "All") {
-          return doc.specialization.toLowerCase() === specialization.toLowerCase();
+          return doc.specialization?.toLowerCase() === specialization.toLowerCase();
         }
         return true;
       })
@@ -166,22 +261,28 @@ class MockDatabase {
         if (query && query.trim()) {
           const q = query.toLowerCase();
           return (
-            doc.name.toLowerCase().includes(q) ||
-            doc.specialization.toLowerCase().includes(q) ||
-            doc.credentials.toLowerCase().includes(q)
+            doc.name?.toLowerCase().includes(q) === true ||
+            doc.display_name?.toLowerCase().includes(q) === true ||
+            doc.specialization?.toLowerCase().includes(q) === true ||
+            doc.credentials?.toLowerCase().includes(q) === true
           );
         }
         return true;
       })
       .map((d) => ({
         id: d.id,
-        name: d.name,
+        name: d.name ?? d.display_name,
+        display_name: d.display_name ?? d.name,
         credentials: d.credentials,
         specialization: d.specialization,
+        timezone: d.timezone ?? d.time_zone,
+        time_zone: d.time_zone ?? d.timezone,
         avatar_url: d.avatar_url,
         next_available_at: d.next_available_at,
         experience_years: d.experience_years,
         consultation_fee: d.consultation_fee,
+        appointment_durations_minutes: d.appointment_durations_minutes ?? d.accepted_durations,
+        accepted_durations: d.accepted_durations ?? d.appointment_durations_minutes,
         is_active: d.is_active,
         schedule_version: d.schedule_version,
       }));
@@ -196,63 +297,117 @@ class MockDatabase {
         error: { code: "RESOURCE_NOT_FOUND", message: "Doctor not found" },
       };
     }
-    return { ...doc };
+    return { ...doc, name: doc.name ?? doc.display_name, display_name: doc.display_name ?? doc.name };
   }
 
   public async createDoctor(req: DoctorCreateRequest): Promise<DoctorDetail> {
     await this.simulateNetwork();
+    const displayName = (req.display_name ?? req.name)?.trim();
+    if (!displayName) {
+      throw {
+        status: 422,
+        error: { code: "VALIDATION_FAILED", message: "Doctor display name is required." },
+      };
+    }
+    const specialization = req.specialization?.trim();
+    if (!specialization) {
+      throw {
+        status: 422,
+        error: { code: "VALIDATION_FAILED", message: "Doctor specialization is required." },
+      };
+    }
+    const durations = req.appointment_durations_minutes ?? req.accepted_durations;
+    if (!durations || durations.length === 0 || !durations.every((duration) => Number.isInteger(duration) && duration >= 5 && duration <= 480)) {
+      throw {
+        status: 422,
+        error: { code: "VALIDATION_FAILED", message: "Appointment durations must be whole minutes between 5 and 480." },
+      };
+    }
+    const normalizedDurations = Array.from(new Set(durations)).sort((a, b) => a - b);
     const newDoc: DoctorDetail = {
       id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      name: req.name || req.display_name || "Doctor",
-      credentials: req.credentials || "MBBS, MD",
-      specialization: req.specialization || "General Medicine",
-      experience_years: req.experience_years ?? 5,
-      consultation_fee: req.consultation_fee ?? 1000,
-      biography: req.biography || `${req.name || req.display_name} is a verified medical specialist in ${req.specialization || "General Medicine"}.`,
-      languages: req.languages || ["English", "Hindi"],
-      accepted_durations: req.accepted_durations || req.appointment_durations_minutes || [15, 30, 45],
-      appointment_durations_minutes: req.appointment_durations_minutes || req.accepted_durations || [30],
-      time_zone: req.time_zone || req.timezone || "Asia/Kolkata",
-      timezone: req.timezone || req.time_zone || "Asia/Kolkata",
+      version: 1,
+      name: displayName,
+      display_name: displayName,
+      credentials: req.credentials ?? null,
+      specialization,
+      experience_years: req.experience_years,
+      consultation_fee: req.consultation_fee,
+      biography: req.biography,
+      languages: req.languages,
+      accepted_durations: normalizedDurations,
+      appointment_durations_minutes: normalizedDurations,
+      time_zone: req.time_zone ?? req.timezone,
+      timezone: req.timezone ?? req.time_zone,
       is_active: true,
       schedule_version: 1,
-      next_available_at: new Date().toISOString(),
-      working_hours: req.working_hours || [
-        { day_of_week: 1, start_time: "09:00", end_time: "17:00", slot_duration_minutes: 30 },
-        { day_of_week: 2, start_time: "09:00", end_time: "17:00", slot_duration_minutes: 30 },
-        { day_of_week: 3, start_time: "09:00", end_time: "17:00", slot_duration_minutes: 30 },
-        { day_of_week: 4, start_time: "09:00", end_time: "17:00", slot_duration_minutes: 30 },
-        { day_of_week: 5, start_time: "09:00", end_time: "17:00", slot_duration_minutes: 30 },
-      ],
+      next_available_at: undefined,
+      working_hours: req.working_hours,
     };
     this.doctors.push(newDoc);
     return { ...newDoc };
+  }
+
+  public async updateDoctor(doctorId: string, req: DoctorUpdateRequest): Promise<DoctorDetail> {
+    await this.simulateNetwork();
+    const doctor = this.doctors.find((item) => item.id === doctorId);
+    if (!doctor) {
+      throw { status: 404, error: { code: "RESOURCE_NOT_FOUND", message: "Doctor not found" } };
+    }
+    const currentVersion = this.requireCurrentVersion(doctor.version, "Doctor profile");
+    this.requireExpectedVersion(req.expected_version, currentVersion, "Doctor profile");
+    if (req.display_name !== undefined && req.display_name !== null) {
+      doctor.name = req.display_name;
+      doctor.display_name = req.display_name;
+    }
+    if (req.credentials !== undefined) doctor.credentials = req.credentials;
+    if (req.specialization !== undefined && req.specialization !== null) doctor.specialization = req.specialization;
+    if (req.timezone !== undefined && req.timezone !== null) {
+      doctor.timezone = req.timezone;
+      doctor.time_zone = req.timezone;
+    }
+    if (req.is_active !== undefined && req.is_active !== null) doctor.is_active = req.is_active;
+    doctor.version = currentVersion + 1;
+    doctor.updated_at = new Date().toISOString();
+    return { ...doctor };
   }
 
   // Doctor Availability Slots
   public async getDoctorAvailability(
     doctorId: string,
     targetDate: Date,
-    durationMinutes = 30
+    durationMinutes: number
   ): Promise<AvailabilitySlot[]> {
     await this.simulateNetwork();
     const doc = this.doctors.find((d) => d.id === doctorId);
     if (!doc) return [];
 
-    const dateStr = formatDateOnly(targetDate, "Asia/Kolkata");
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 1) return [];
+    const timezone = doc.timezone ?? doc.time_zone;
+    if (!timezone) return [];
+    const acceptedDurations = doc.appointment_durations_minutes ?? doc.accepted_durations;
+    if (!acceptedDurations?.includes(durationMinutes)) return [];
+    const dateStr = formatDateOnly(targetDate, timezone);
     // Determine day of week in Asia/Kolkata
-    const targetDateInKolkata = new Date(`${dateStr}T12:00:00+05:30`);
-    const dayOfWeek = targetDateInKolkata.getDay();
+    const targetDateAtNoon = new Date(`${dateStr}T12:00:00`);
+    const dayOfWeek = targetDateAtNoon.getDay();
 
     const rule = (doc.working_hours || []).find(
       (r) => (r.day_of_week ?? r.weekday) === dayOfWeek
     );
     if (!rule) return [];
 
-    const startTime = rule.start_time ?? rule.starts_local ?? "09:00";
-    const endTime = rule.end_time ?? rule.ends_local ?? "17:00";
+    const startTime = rule.start_time ?? rule.starts_local;
+    const endTime = rule.end_time ?? rule.ends_local;
+    if (!startTime || !endTime) return [];
     const [startH, startM] = startTime.split(":").map(Number);
     const [endH, endM] = endTime.split(":").map(Number);
+    if (
+      !Number.isInteger(startH) ||
+      !Number.isInteger(startM) ||
+      !Number.isInteger(endH) ||
+      !Number.isInteger(endM)
+    ) return [];
 
     const slots: AvailabilitySlot[] = [];
 
@@ -321,10 +476,69 @@ class MockDatabase {
     return slots;
   }
 
+  public async getDoctorWorkingHours(doctorId: string): Promise<WorkingHoursResponse> {
+    await this.simulateNetwork();
+    const doctor = this.doctors.find((item) => item.id === doctorId);
+    if (!doctor) {
+      throw { status: 404, error: { code: "RESOURCE_NOT_FOUND", message: "Doctor not found" } };
+    }
+    const timezone = doctor.timezone ?? doctor.time_zone;
+    const durations = doctor.appointment_durations_minutes ?? doctor.accepted_durations;
+    const scheduleVersion = this.requireCurrentVersion(doctor.schedule_version, "Doctor schedule");
+    if (!timezone || !durations || durations.length === 0) {
+      throw { status: 503, error: { code: "DEPENDENCY_UNAVAILABLE", message: "Doctor schedule is unavailable." } };
+    }
+    return {
+      doctor_id: doctor.id,
+      version: scheduleVersion,
+      timezone,
+      appointment_durations_minutes: [...durations],
+      intervals: (doctor.working_hours ?? []).map((interval) => ({
+        weekday: interval.weekday ?? interval.day_of_week,
+        starts_local: interval.starts_local ?? interval.start_time,
+        ends_local: interval.ends_local ?? interval.end_time,
+      })),
+    };
+  }
+
+  public async replaceDoctorWorkingHours(
+    doctorId: string,
+    req: WorkingHoursReplaceRequest
+  ): Promise<WorkingHoursResponse> {
+    await this.simulateNetwork();
+    const doctor = this.doctors.find((item) => item.id === doctorId);
+    if (!doctor) {
+      throw { status: 404, error: { code: "RESOURCE_NOT_FOUND", message: "Doctor not found" } };
+    }
+    const currentScheduleVersion = this.requireCurrentVersion(doctor.schedule_version, "Doctor schedule");
+    const currentDoctorVersion = this.requireCurrentVersion(doctor.version, "Doctor profile");
+    this.requireExpectedVersion(req.expected_version, currentScheduleVersion, "Doctor schedule");
+    if (req.timezone !== undefined && req.timezone !== null) {
+      doctor.timezone = req.timezone;
+      doctor.time_zone = req.timezone;
+    }
+    if (req.appointment_durations_minutes !== undefined && req.appointment_durations_minutes !== null) {
+      doctor.appointment_durations_minutes = [...req.appointment_durations_minutes];
+      doctor.accepted_durations = [...req.appointment_durations_minutes];
+    }
+    doctor.working_hours = req.intervals.map((interval) => ({ ...interval }));
+    doctor.schedule_version = currentScheduleVersion + 1;
+    doctor.version = currentDoctorVersion + 1;
+    doctor.updated_at = new Date().toISOString();
+    return this.getDoctorWorkingHours(doctorId);
+  }
+
   // Holds
   public async createHold(req: HoldCreateRequest): Promise<Hold> {
     await this.simulateNetwork();
     const scenario = scenarioManager.getScenario();
+
+    if (!Number.isInteger(req.duration_minutes) || req.duration_minutes < 1) {
+      throw {
+        status: 422,
+        error: { code: "VALIDATION_FAILED", message: "A positive appointment duration is required." },
+      };
+    }
 
     if (scenario === "validation_error") {
       throw {
@@ -338,7 +552,13 @@ class MockDatabase {
     }
 
     const slotStart = new Date(req.starts_at);
-    const duration = req.duration_minutes || 30;
+    if (Number.isNaN(slotStart.getTime())) {
+      throw {
+        status: 422,
+        error: { code: "VALIDATION_FAILED", message: "A valid appointment start time is required." },
+      };
+    }
+    const duration = req.duration_minutes;
     const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
 
     // Check conflicts (BOOK-002)
@@ -366,12 +586,20 @@ class MockDatabase {
     const holdDurationMs = scenario === "expired_hold" ? 5 * 1000 : 5 * 60 * 1000; // 5 minutes standard
     const expiresAt = new Date(Date.now() + holdDurationMs).toISOString();
 
+    const patientId = this.activeUser.profile_id;
+    if (!patientId) {
+      throw {
+        status: 401,
+        error: { code: "AUTHENTICATION_REQUIRED", message: "An authenticated patient profile is required to hold a slot." },
+      };
+    }
+
     const hold: Hold = {
       id: `hld-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       version: 1,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      patient_id: this.activeUser.profile_id || "pat-001-aarav",
+      patient_id: patientId,
       doctor_id: req.doctor_id,
       starts_at: req.starts_at,
       ends_at: slotEnd.toISOString(),
@@ -456,12 +684,12 @@ class MockDatabase {
       patient_age: 34,
       patient_gender: "male",
       doctor_id: hold.doctor_id,
-      doctor_name: doc?.name || "Doctor",
-      doctor_specialization: doc?.specialization || "General Medicine",
+      doctor_name: doc?.display_name ?? doc?.name,
+      doctor_specialization: doc?.specialization ?? undefined,
       starts_at: hold.starts_at,
       ends_at: hold.ends_at,
       status: "confirmed",
-      urgency: "routine",
+      urgency: null,
       symptom_summary: req.symptoms_text.slice(0, 100) + "…",
       original_symptoms_text: req.symptoms_text,
       symptoms_recorded_at: new Date().toISOString(),
@@ -469,7 +697,6 @@ class MockDatabase {
       ai_brief_summary: isPartialFailure
         ? undefined
         : `Patient reports: ${req.symptoms_text}. Initial intake review generated.`,
-      ai_brief_urgency: "routine",
       integrations: [
         {
           id: `int-${Date.now()}-email`,
@@ -556,13 +783,15 @@ class MockDatabase {
   public async cancelAppointment(
     appointmentId: string,
     reason: string,
-    cancelledBy: "patient" | "doctor" | "admin" = "patient"
+    cancelledBy: "patient" | "doctor" | "admin" = "patient",
+    expectedVersion?: number
   ): Promise<AppointmentDetail> {
     await this.simulateNetwork();
     const apt = this.appointments.find((a) => a.id === appointmentId);
     if (!apt) {
       throw { status: 404, error: { code: "RESOURCE_NOT_FOUND", message: "Appointment not found" } };
     }
+    this.requireExpectedVersion(expectedVersion, apt.version, "Appointment");
 
     const statusMap = {
       patient: "cancelled_patient" as const,
@@ -583,15 +812,30 @@ class MockDatabase {
   public async rescheduleAppointment(
     appointmentId: string,
     newStartsAt: string,
-    durationMinutes = 30
+    durationMinutes: number,
+    expectedVersion?: number
   ): Promise<AppointmentDetail> {
     await this.simulateNetwork();
     const apt = this.appointments.find((a) => a.id === appointmentId);
     if (!apt) {
       throw { status: 404, error: { code: "RESOURCE_NOT_FOUND", message: "Appointment not found" } };
     }
+    this.requireExpectedVersion(expectedVersion, apt.version, "Appointment");
+
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 1) {
+      throw {
+        status: 422,
+        error: { code: "VALIDATION_FAILED", message: "A positive appointment duration is required." },
+      };
+    }
 
     const slotStart = new Date(newStartsAt);
+    if (Number.isNaN(slotStart.getTime())) {
+      throw {
+        status: 422,
+        error: { code: "VALIDATION_FAILED", message: "A valid appointment start time is required." },
+      };
+    }
     const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60 * 1000);
 
     apt.starts_at = slotStart.toISOString();
@@ -619,6 +863,9 @@ class MockDatabase {
 
     const apt = this.appointments.find((a) => a.id === appointmentId);
     const doc = this.doctors.find((d) => d.id === doctorId);
+    if (!apt || !doc) {
+      throw { status: 404, error: { code: "RESOURCE_NOT_FOUND", message: "Appointment or doctor not found" } };
+    }
 
     const newVisit: Visit = {
       id: `vis-${Date.now()}`,
@@ -627,7 +874,7 @@ class MockDatabase {
       updated_at: new Date().toISOString(),
       appointment_id: appointmentId,
       doctor_id: doctorId,
-      patient_id: apt?.patient_id || "pat-001-aarav",
+      patient_id: apt.patient_id,
       status: "draft",
       doctor_notes: "",
       diagnosis: "",
@@ -639,9 +886,9 @@ class MockDatabase {
         updated_at: new Date().toISOString(),
         visit_id: `vis-${Date.now()}`,
         doctor_id: doctorId,
-        doctor_name: doc?.name || "Doctor",
-        patient_id: apt?.patient_id || "pat-001-aarav",
-        patient_name: apt?.patient_name || "Patient",
+        doctor_name: doc.display_name ?? doc.name,
+        patient_id: apt.patient_id,
+        patient_name: apt.patient_name,
         items: [],
       },
     };
@@ -659,13 +906,16 @@ class MockDatabase {
     visitId: string,
     notes: string,
     diagnosis: string,
-    prescriptionItems: PrescriptionItem[]
+    prescriptionItems: PrescriptionItem[],
+    expectedVersion?: number
   ): Promise<Visit> {
     await this.simulateNetwork();
     const visit = this.visits.get(visitId);
     if (!visit) {
       throw { status: 404, error: { code: "RESOURCE_NOT_FOUND", message: "Visit not found" } };
     }
+    this.requireExpectedVersion(expectedVersion, visit.version, "Visit");
+    this.validatePrescriptionItems(prescriptionItems);
 
     visit.doctor_notes = notes;
     visit.diagnosis = diagnosis;
@@ -685,13 +935,16 @@ class MockDatabase {
     notes: string,
     diagnosis: string,
     prescriptionItems: PrescriptionItem[],
-    followUpInstructions?: string
+    followUpInstructions?: string,
+    expectedVersion?: number
   ): Promise<Visit> {
     await this.simulateNetwork();
     const visit = this.visits.get(visitId);
     if (!visit) {
       throw { status: 404, error: { code: "RESOURCE_NOT_FOUND", message: "Visit not found" } };
     }
+    this.requireExpectedVersion(expectedVersion, visit.version, "Visit");
+    this.validatePrescriptionItems(prescriptionItems);
 
     if (!notes || notes.trim().length < 5) {
       throw {
@@ -732,7 +985,48 @@ class MockDatabase {
     return { ...visit };
   }
 
+  public async amendVisit(
+    visitId: string,
+    reason: string,
+    notesText: string,
+    expectedVersion: number
+  ): Promise<Visit> {
+    await this.simulateNetwork();
+    const visit = this.visits.get(visitId);
+    if (!visit) {
+      throw { status: 404, error: { code: "RESOURCE_NOT_FOUND", message: "Visit not found" } };
+    }
+    this.requireExpectedVersion(expectedVersion, visit.version, "Visit");
+    if (visit.status !== "completed") {
+      throw { status: 409, error: { code: "INVALID_STATE_TRANSITION", message: "Only completed visits can be amended." } };
+    }
+    visit.doctor_notes = `${visit.doctor_notes ?? ""}\n\nAmendment (${reason}):\n${notesText}`.trim();
+    visit.version += 1;
+    visit.updated_at = new Date().toISOString();
+    return { ...visit };
+  }
+
   // Medication Reminders (Derived deterministically from structured RX fields - RX-002)
+  public async getReminderPreferences(): Promise<ReminderPreferencesResponse> {
+    await this.simulateNetwork();
+    return { ...this.reminderPreferences, local_times: [...this.reminderPreferences.local_times] };
+  }
+
+  public async updateReminderPreferences(req: ReminderPreferencesRequest): Promise<ReminderPreferencesResponse> {
+    await this.simulateNetwork();
+    this.requireExpectedVersion(req.expected_version, this.reminderPreferences.version, "Reminder preferences");
+    this.reminderPreferences = {
+      ...this.reminderPreferences,
+      version: this.reminderPreferences.version + 1,
+      enabled: req.enabled,
+      channel: req.channel,
+      timezone: req.timezone,
+      local_times: [...req.local_times],
+      updated_at: new Date().toISOString(),
+    };
+    return this.getReminderPreferences();
+  }
+
   public async getPatientReminders(patientId: string): Promise<MedicationReminder[]> {
     await this.simulateNetwork();
     const scenario = scenarioManager.getScenario();
@@ -743,23 +1037,19 @@ class MockDatabase {
       (rx) => rx.patient_id === patientId
     );
 
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = formatDateOnly(new Date(), this.reminderPreferences.timezone);
 
     for (const rx of patientPrescriptions) {
       for (const item of rx.items) {
-        // Derive times based on structured frequency string
-        const freq = item.frequency.toLowerCase();
-        let times: string[] = ["08:00 AM"];
-
-        if (freq.includes("twice") || freq.includes("2 times") || freq.includes("bid")) {
-          times = ["08:30 AM", "08:30 PM"];
-        } else if (freq.includes("three") || freq.includes("3 times") || freq.includes("tid")) {
-          times = ["08:00 AM", "02:00 PM", "08:00 PM"];
-        } else if (freq.includes("bedtime") || freq.includes("night") || freq.includes("hs")) {
-          times = ["10:00 PM"];
-        } else if (freq.includes("morning") || freq.includes("once")) {
-          times = ["08:00 AM"];
-        }
+        // Derive times only from the structured frequency enum. Unknown and as-needed
+        // prescriptions have no deterministic occurrences and are not fabricated.
+        const times = {
+          once_daily: ["09:00 AM"],
+          twice_daily: ["09:00 AM", "09:00 PM"],
+          three_times_daily: ["08:00 AM", "02:00 PM", "08:00 PM"],
+          every_4_hours: ["12:00 AM", "04:00 AM", "08:00 AM", "12:00 PM", "04:00 PM", "08:00 PM"],
+          as_needed: [],
+        }[item.frequency] ?? [];
 
         for (const time of times) {
           reminders.push({
@@ -771,7 +1061,7 @@ class MockDatabase {
             scheduled_date: todayStr,
             taken: false,
             instructions: item.instructions,
-            route: item.route || "Oral",
+            route: item.route ?? "Route not provided",
           });
         }
       }
@@ -823,7 +1113,10 @@ class MockDatabase {
     });
 
     const previewToken = `prev-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const scheduleVersion = doc.schedule_version || 1;
+    const scheduleVersion = doc.schedule_version;
+    if (!scheduleVersion) {
+      throw { status: 503, error: { code: "DEPENDENCY_UNAVAILABLE", message: "Doctor schedule version is unavailable." } };
+    }
 
     // Store token for single-use enforcement and binding validation (LEAVE-002)
     this.leavePreviewTokens.set(previewToken, {
@@ -842,8 +1135,14 @@ class MockDatabase {
       ends_at: req.ends_at,
       reason: req.reason,
       affected_holds_count: affectedHolds.length,
+      affected_hold_count: affectedHolds.length,
+      affected_hold_ids: affectedHolds.map((hold) => hold.id),
       affected_appointments: affectedAppointments,
+      affected_appointment_count: affectedAppointments.length,
+      affected_appointment_ids: affectedAppointments.map((appointment) => appointment.id),
+      expected_schedule_version: scheduleVersion,
       schedule_version: scheduleVersion,
+      expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     };
   }
 
@@ -851,7 +1150,7 @@ class MockDatabase {
     doctorId: string,
     startsAt: string,
     endsAt: string,
-    reason: string,
+    reason: string | null | undefined,
     req: LeaveApplyRequest
   ): Promise<DoctorLeave> {
     await this.simulateNetwork();
@@ -911,14 +1210,19 @@ class MockDatabase {
     }
 
     // 5. Exact doctor/start/end/reason match AND schedule version match
-    const doctorCurrentScheduleVersion = doc.schedule_version || 1;
+    const doctorCurrentScheduleVersion = this.requireCurrentVersion(doc.schedule_version, "Doctor schedule");
+    const doctorCurrentVersion = this.requireCurrentVersion(doc.version, "Doctor profile");
+    const expectedScheduleVersion = req.expected_version ?? req.expected_schedule_version;
     if (
       tokenMeta.doctor_id !== doctorId ||
       tokenMeta.starts_at !== startsAt ||
       tokenMeta.ends_at !== endsAt ||
-      tokenMeta.reason !== reason ||
-      tokenMeta.schedule_version !== req.expected_schedule_version ||
-      doctorCurrentScheduleVersion !== req.expected_schedule_version
+      tokenMeta.reason !== (reason ?? null) ||
+      typeof expectedScheduleVersion !== "number" ||
+      !Number.isInteger(expectedScheduleVersion) ||
+      expectedScheduleVersion < 1 ||
+      tokenMeta.schedule_version !== expectedScheduleVersion ||
+      doctorCurrentScheduleVersion !== expectedScheduleVersion
     ) {
       this.leavePreviewTokens.delete(req.preview_token);
       throw {
@@ -1003,7 +1307,9 @@ class MockDatabase {
     // Transition only confirmed appointments to cancelled_doctor_leave
     for (const apt of affectedConfirmedAppointments) {
       apt.status = "cancelled_doctor_leave";
-      apt.cancellation_reason = `Doctor on approved leave: ${reason}`;
+      apt.cancellation_reason = reason
+        ? `Doctor on approved leave: ${reason}`
+        : "Doctor on approved leave";
       apt.cancelled_at = timestampISO;
       apt.cancelled_by = "admin_leave_manager";
       apt.version += 1;
@@ -1037,16 +1343,17 @@ class MockDatabase {
     this.integrations.unshift(...stagedIntegrations);
 
     // Increment doctor's schedule version
-    doc.schedule_version = (doc.schedule_version || 1) + 1;
+    doc.schedule_version = doctorCurrentScheduleVersion + 1;
+    doc.version = doctorCurrentVersion + 1;
 
     // Create doctor leave record
     const newLeave: DoctorLeave = {
       id: `leave-${Date.now()}`,
       doctor_id: doctorId,
-      doctor_name: doc.name,
+      doctor_name: doc.display_name ?? doc.name,
       starts_at: startsAt,
       ends_at: endsAt,
-      reason,
+      reason: reason ?? null,
       created_at: timestampISO,
     };
     this.leaves.unshift(newLeave);
@@ -1062,18 +1369,21 @@ class MockDatabase {
     return [...this.integrations];
   }
 
-  public async retryIntegration(operationId: string): Promise<AdminIntegrationItem> {
+  public async retryIntegration(operationId: string, expectedVersion: number): Promise<AdminIntegrationItem> {
     await this.simulateNetwork();
-    const item = this.integrations.find((i) => i.operation_id === operationId);
+    const item = this.integrations.find((i) => i.id === operationId || i.operation_id === operationId);
     if (!item) {
       throw { status: 404, error: { code: "RESOURCE_NOT_FOUND", message: "Integration operation not found" } };
     }
+    const currentVersion = this.requireCurrentVersion(item.version, "Integration operation");
+    this.requireExpectedVersion(expectedVersion, currentVersion, "Integration operation");
 
     item.state = "succeeded";
     item.attempt_count += 1;
     item.last_attempt_at = new Date().toISOString();
     item.error_code = undefined;
     item.error_message = undefined;
+    item.version = currentVersion + 1;
 
     return { ...item };
   }

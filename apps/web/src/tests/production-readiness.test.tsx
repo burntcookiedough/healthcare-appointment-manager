@@ -112,9 +112,12 @@ describe("Production Readiness & Contract Compliance Suite", () => {
       const initialCount = initialDocs.length;
 
       const newDoc = await apiClient.createDoctor({
+        subject_id: "usr-sub-doc-ananya-sen",
         name: "Dr. Ananya Sen",
         specialization: "Endocrinology",
         credentials: "MBBS, MD (Endocrinology) — AIIMS",
+        timezone: "Asia/Kolkata",
+        appointment_durations_minutes: [30],
         consultation_fee: 1500,
         experience_years: 8,
       });
@@ -137,12 +140,14 @@ describe("Production Readiness & Contract Compliance Suite", () => {
       expect(failedItem).toBeDefined();
 
       if (failedItem) {
-        const retried = await apiClient.retryIntegration(failedItem.operation_id);
+        const retried = await apiClient.retryIntegration(failedItem.id, {
+          expectedVersion: failedItem.version,
+        });
         expect(retried.state).toBe("succeeded");
         expect(retried.error_message).toBeUndefined();
 
         const updatedList = await apiClient.getAdminIntegrations();
-        const updatedItem = updatedList.find((i) => i.operation_id === failedItem.operation_id);
+        const updatedItem = updatedList.find((i) => i.id === failedItem.id);
         expect(updatedItem?.state).toBe("succeeded");
       }
     });

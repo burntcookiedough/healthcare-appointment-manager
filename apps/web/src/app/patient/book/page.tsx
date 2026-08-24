@@ -29,18 +29,18 @@ function BookingWizardContent() {
 
   const queryDoctorId = searchParams.get("doctor_id") || "";
   const queryStartsAt = searchParams.get("starts_at");
-  const queryDuration = Number(searchParams.get("duration") || 30);
+  const parsedDuration = Number(searchParams.get("duration"));
+  const queryDuration = Number.isInteger(parsedDuration) && parsedDuration > 0 ? parsedDuration : undefined;
 
   // Steps: 1: Doctor, 2: Slot, 3: Hold & Symptoms, 4: Confirmed
   const [currentStep, setCurrentStep] = React.useState<number>(() => {
-    if (queryStartsAt) return 3;
+    if (queryStartsAt && queryDoctorId) return 3;
     if (queryDoctorId) return 2;
     return 1;
   });
 
   const [selectedDoctorId, setSelectedDoctorId] = React.useState<string>(queryDoctorId);
   const [selectedDate, setSelectedDate] = React.useState<Date>(() => new Date());
-  const selectedDuration = queryDuration;
 
   const [activeHold, setActiveHold] = React.useState<Hold | null>(null);
   const [isHoldExpired, setIsHoldExpired] = React.useState<boolean>(false);
@@ -61,6 +61,15 @@ function BookingWizardContent() {
     enabled: Boolean(selectedDoctorId),
   });
 
+  const availableDurations = React.useMemo(
+    () => (selectedDoctor?.appointment_durations_minutes ?? selectedDoctor?.accepted_durations ?? [])
+      .filter((duration) => Number.isInteger(duration) && duration > 0),
+    [selectedDoctor]
+  );
+  const selectedDuration = queryDuration && availableDurations.includes(queryDuration)
+    ? queryDuration
+    : availableDurations[0];
+
   // Query availability slots
   const { data: slots, isLoading: isSlotsLoading } = useQuery({
     queryKey: [
@@ -69,8 +78,11 @@ function BookingWizardContent() {
       formatDateOnly(selectedDate, "Asia/Kolkata"),
       selectedDuration,
     ],
-    queryFn: () => apiClient.getDoctorAvailability(selectedDoctorId, selectedDate, selectedDuration),
-    enabled: Boolean(selectedDoctorId),
+    queryFn: () => {
+      if (!selectedDuration) return Promise.resolve([]);
+      return apiClient.getDoctorAvailability(selectedDoctorId, selectedDate, selectedDuration);
+    },
+    enabled: Boolean(selectedDoctorId && selectedDuration),
   });
 
   // Next 7 days
@@ -88,6 +100,7 @@ function BookingWizardContent() {
   // Mutation: Acquire Hold
   const holdMutation = useMutation({
     mutationFn: async (startsAt: string) => {
+      if (!selectedDuration) throw new Error("No appointment duration is available");
       return apiClient.createHold({
         doctor_id: selectedDoctorId,
         starts_at: startsAt,
@@ -110,7 +123,7 @@ function BookingWizardContent() {
 
   // Auto-acquire hold if arriving with starts_at query param (protected against StrictMode duplicate mounts)
   React.useEffect(() => {
-    if (queryStartsAt && currentStep === 3) {
+    if (queryStartsAt && selectedDoctorId && selectedDuration && currentStep === 3) {
       const holdKey = `${selectedDoctorId}:${queryStartsAt}:${selectedDuration}`;
       if (acquiredHoldKeyRef.current === holdKey || activeHold) {
         return;
@@ -233,7 +246,7 @@ function BookingWizardContent() {
                   setCurrentStep(2);
                 }}
                 aria-pressed={selectedDoctorId === doc.id}
-                aria-label={`Select ${doc.name}, ${doc.specialization}`}
+                aria-label={`Select ${doc.name ?? doc.display_name ?? "Doctor name unavailable"}, ${doc.specialization ?? "Specialization unavailable"}`}
                 className={`p-4 rounded-2xl border text-left transition-colors duration-150 hover:border-[#111111] hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] focus-visible:outline-offset-2 ${
                   selectedDoctorId === doc.id ? "border-[#111111] bg-[#fbfbf8]" : "border-[#e7e7e2] bg-white"
                 }`}
@@ -243,9 +256,11 @@ function BookingWizardContent() {
                     <Stethoscope className="h-5 w-5" />
                   </div>
                   <div>
-                    <div className="text-sm font-bold text-[#111111]">{doc.name || doc.display_name}</div>
-                    <div className="text-xs text-[#26734d] font-semibold">{doc.specialization}</div>
-                    <div className="text-xs text-[#626262]">{formatCurrencyINR(doc.consultation_fee ?? 1000)}</div>
+                    <div className="text-sm font-bold text-[#111111]">{doc.name ?? doc.display_name ?? "Doctor name unavailable"}</div>
+                    <div className="text-xs text-[#26734d] font-semibold">{doc.specialization ?? "Specialization unavailable"}</div>
+                    <div className="text-xs text-[#626262]">
+                      {doc.consultation_fee !== undefined ? formatCurrencyINR(doc.consultation_fee) : "Fee unavailable"}
+                    </div>
                   </div>
                 </div>
               </button>
@@ -263,10 +278,10 @@ function BookingWizardContent() {
                 <Stethoscope className="h-6 w-6" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-[#111111]">{selectedDoctor.name || selectedDoctor.display_name}</h2>
+                <h2 className="text-xl font-bold text-[#111111]">{selectedDoctor.name ?? selectedDoctor.display_name ?? "Doctor name unavailable"}</h2>
                 <p className="text-xs font-medium text-[#626262]">
-                  {selectedDoctor.specialization} • {selectedDoctor.experience_years ?? 5} yrs exp •{" "}
-                  {formatCurrencyINR(selectedDoctor.consultation_fee ?? 1000)}
+                  {selectedDoctor.specialization ?? "Specialization unavailable"} • {selectedDoctor.experience_years !== undefined ? `${selectedDoctor.experience_years} yrs exp` : "Experience not provided"} •{" "}
+                  {selectedDoctor.consultation_fee !== undefined ? formatCurrencyINR(selectedDoctor.consultation_fee) : "Fee unavailable"}
                 </p>
               </div>
             </div>
@@ -419,8 +434,8 @@ function BookingWizardContent() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 rounded-2xl border border-[#f0f0eb] bg-[#fbfbf8] p-4 text-xs">
               <div>
                 <span className="text-[#8e8e89] block">Doctor</span>
-                <span className="font-bold text-[#111111]">{selectedDoctor.name}</span>
-                <span className="text-[#626262] block">{selectedDoctor.specialization}</span>
+                <span className="font-bold text-[#111111]">{selectedDoctor.name ?? selectedDoctor.display_name ?? "Doctor name unavailable"}</span>
+                <span className="text-[#626262] block">{selectedDoctor.specialization ?? "Specialization unavailable"}</span>
               </div>
               <div>
                 <span className="text-[#8e8e89] block">Scheduled Time</span>
@@ -434,7 +449,7 @@ function BookingWizardContent() {
               <div>
                 <span className="text-[#8e8e89] block">Fee</span>
                 <span className="font-bold text-[#111111]">
-                  {formatCurrencyINR(selectedDoctor.consultation_fee ?? 1000)}
+                  {selectedDoctor.consultation_fee !== undefined ? formatCurrencyINR(selectedDoctor.consultation_fee) : "Fee unavailable"}
                 </span>
                 <span className="text-[#26734d] font-semibold block">Pay at Clinic</span>
               </div>

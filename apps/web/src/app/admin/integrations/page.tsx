@@ -41,11 +41,12 @@ export default function AdminIntegrationsPage() {
   });
 
   const retryMutation = useMutation({
-    mutationFn: async (operationId: string) => {
-      return apiClient.retryIntegration(operationId);
+    mutationFn: async (item: { id: string; version?: number }) => {
+      if (!item.version) throw new Error("Integration operation version is unavailable.");
+      return apiClient.retryIntegration(item.id, { expectedVersion: item.version });
     },
     onSuccess: (updated) => {
-      toast.success(`Operation ${updated.operation_id} retry succeeded.`);
+      toast.success(`Operation ${updated.id} retry succeeded.`);
       queryClient.invalidateQueries({ queryKey: ["admin-integrations-list"] });
       queryClient.invalidateQueries({ queryKey: ["admin-integrations-overview"] });
     },
@@ -170,13 +171,15 @@ export default function AdminIntegrationsPage() {
                 {items.map((item) => (
                   <tr key={item.id} className="hover:bg-[#fbfbf8]/80 transition-colors">
                     <td className="py-4 px-6">
-                      <div className="font-mono font-bold text-[#111111]">{item.operation_id}</div>
+                      <div className="font-mono font-bold text-[#111111]">{item.id}</div>
                       <div className="text-[11px] text-[#626262] uppercase font-semibold mt-0.5">
                         {item.channel}
                       </div>
                     </td>
                     <td className="py-4 px-6 max-w-xs">
-                      <div className="text-[#111111] font-medium">{item.payload_summary}</div>
+                      <div className="text-[#111111] font-medium">
+                        {item.payload_summary ?? "Integration payload summary unavailable."}
+                      </div>
                       {item.error_message && (
                         <div className="text-[11px] text-[#b42318] mt-0.5 font-mono">
                           {item.error_code}: {item.error_message}
@@ -184,7 +187,8 @@ export default function AdminIntegrationsPage() {
                       )}
                     </td>
                     <td className="py-4 px-6 font-mono text-[#111111]">
-                      {item.attempt_count} / {item.max_attempts}
+                      {item.attempt_count}
+                      {item.max_attempts !== undefined ? ` / ${item.max_attempts}` : ""}
                     </td>
                     <td className="py-4 px-6 text-[#626262]">
                       {item.last_attempt_at ? formatDateTime(item.last_attempt_at) : "Pending"}
@@ -197,10 +201,10 @@ export default function AdminIntegrationsPage() {
                         <Button
                           variant="primary"
                           size="sm"
-                          onClick={() => retryMutation.mutate(item.operation_id)}
+                          onClick={() => retryMutation.mutate({ id: item.id, version: item.version })}
                           isLoading={
                             retryMutation.isPending &&
-                            retryMutation.variables === item.operation_id
+                            retryMutation.variables?.id === item.id
                           }
                           className="text-xs"
                         >

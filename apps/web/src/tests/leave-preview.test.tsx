@@ -92,8 +92,9 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
     expect(preview.affected_holds_count).toBeGreaterThanOrEqual(1);
 
     // Guaranteed affected confirmed appointments
-    expect(preview.affected_appointments.length).toBeGreaterThan(0);
-    const affectedIds = preview.affected_appointments.map((a) => a.id);
+    const affectedAppointments = preview.affected_appointments ?? [];
+    expect(affectedAppointments.length).toBeGreaterThan(0);
+    const affectedIds = affectedAppointments.map((a) => a.id);
     expect(affectedIds).toContain("apt-001-upcoming");
     expect(affectedIds).toContain("apt-002-today-doctor");
 

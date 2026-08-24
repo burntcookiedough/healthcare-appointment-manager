@@ -94,10 +94,6 @@ export interface DoctorSummary {
 }
 
 export interface DoctorDetail extends DoctorSummary {
-  name: string;
-  specialization: string;
-  credentials: string;
-  timezone?: string;
   appointment_durations_minutes?: number[];
   languages?: string[];
   working_hours?: WorkingHourInterval[];
@@ -186,7 +182,7 @@ export type IntegrationChannel =
   | "appointment_reminder"
   | "medication_reminder"
   | "reminder"
-  | string;
+  | (string & {});
 
 export type IntegrationState = "pending" | "succeeded" | "retrying" | "failed";
 
@@ -253,10 +249,10 @@ export interface AppointmentSummary {
 export type AiBriefStatus = "pending" | "ready" | "unavailable";
 
 export interface AppointmentDetail extends AppointmentSummary {
-  patient_name: string;
-  doctor_name: string;
-  doctor_specialization: string;
-  integrations: IntegrationStatus[];
+  patient_name?: string;
+  doctor_name?: string;
+  doctor_specialization?: string;
+  integrations?: IntegrationStatus[];
   symptoms_text?: string | null;
   original_symptoms_text?: string;
   symptoms_recorded_at?: string;
@@ -307,7 +303,7 @@ export type PrescriptionFrequency =
   | "three_times_daily"
   | "every_4_hours"
   | "as_needed"
-  | string;
+  | (string & {});
 
 export interface PrescriptionItemInput {
   medication_name: string;
@@ -505,14 +501,16 @@ export interface LeavePreviewResponse {
   starts_at: string;
   ends_at: string;
   reason?: string | null;
-  schedule_version?: number;
   expected_schedule_version?: number;
-  affected_holds_count?: number;
-  affected_hold_count?: number;
-  affected_appointments: AppointmentSummary[];
-  affected_appointment_ids?: string[];
   affected_hold_ids?: string[];
+  affected_appointment_ids?: string[];
+  affected_hold_count?: number;
+  affected_appointment_count?: number;
   expires_at?: string;
+  // Demo-only compatibility projections. Production responses use the fields above.
+  schedule_version?: number;
+  affected_holds_count?: number;
+  affected_appointments?: AppointmentSummary[];
 }
 
 export interface LeaveApplyRequest {
@@ -528,9 +526,11 @@ export interface LeaveEditRequest extends LeaveApplyRequest {
 }
 
 export interface AdminIntegrationItem extends IntegrationStatus {
-  operation_id: string;
-  max_attempts: number;
-  payload_summary: string;
+  // Demo compatibility fields. The production API exposes the operation ID as `id`
+  // and does not return payload summaries or retry limits.
+  operation_id?: string;
+  max_attempts?: number;
+  payload_summary?: string;
   target_id?: string;
   target_type?: "appointment" | "reminder" | "leave" | "visit";
   next_attempt_at?: string;

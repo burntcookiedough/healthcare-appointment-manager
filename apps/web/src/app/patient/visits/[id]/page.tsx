@@ -23,16 +23,18 @@ import { toast } from "sonner";
 export default function PatientVisitSummaryPage() {
   const params = useParams();
   const router = useRouter();
-  const visitId = (params?.id as string) || "vis-001-completed";
+  const rawId = params?.id;
+  const visitId = typeof rawId === "string" && rawId.trim() !== "" ? rawId : "";
 
   const { data: visit, isLoading, error } = useQuery({
     queryKey: ["patient-visit-summary", visitId],
     queryFn: () => apiClient.getVisit(visitId),
+    enabled: Boolean(visitId),
   });
 
   if (isLoading) return <CardSkeleton />;
 
-  if (error || !visit) {
+  if (!visitId || error || !visit) {
     return (
       <EmptyState
         icon={AlertCircle}
@@ -91,7 +93,7 @@ export default function PatientVisitSummaryPage() {
               Formal Diagnosis
             </span>
             <p className="text-sm font-bold text-[#171815]">
-              {visit.diagnosis || "Clinical evaluation completed"}
+              {visit.diagnosis || "Diagnosis not provided"}
             </p>
           </div>
 
@@ -100,7 +102,7 @@ export default function PatientVisitSummaryPage() {
               Follow-up Review Plan
             </span>
             <p className="text-sm font-medium text-[#171815]">
-              {visit.follow_up_instructions || "As needed if symptoms persist"}
+              {visit.follow_up_instructions || "Follow-up plan not provided"}
             </p>
           </div>
         </div>
@@ -170,11 +172,11 @@ export default function PatientVisitSummaryPage() {
                         {item.medication_name}
                       </td>
                       <td className="py-3.5 px-4 font-mono text-[#171815]">
-                        {item.dosage} ({item.route})
+                        {item.dosage} ({item.route ?? "Route not provided"})
                       </td>
                       <td className="py-3.5 px-4 text-[#171815]">{item.frequency}</td>
                       <td className="py-3.5 px-4 text-[#666861]">
-                        {item.duration_days ? `${item.duration_days} days` : "As directed"}
+                        {item.duration_days ? `${item.duration_days} days` : "Duration not provided"}
                       </td>
                       <td className="py-3.5 px-4 text-[#666861]">{item.instructions}</td>
                     </tr>

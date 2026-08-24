@@ -76,13 +76,7 @@ export default function AdminOverviewPage() {
   const pendingCount = integrations?.filter((i) => i.state === "pending").length || 0;
 
   const chartData = React.useMemo(() => {
-    const buckets: Record<string, { confirmed: number; in_progress: number }> = {
-      "09:00": { confirmed: 0, in_progress: 0 },
-      "11:00": { confirmed: 0, in_progress: 0 },
-      "13:00": { confirmed: 0, in_progress: 0 },
-      "15:00": { confirmed: 0, in_progress: 0 },
-      "17:00": { confirmed: 0, in_progress: 0 },
-    };
+    const buckets = new Map<string, { confirmed: number; in_progress: number }>();
 
     if (todayAppointments.length > 0) {
       todayAppointments.forEach((apt) => {
@@ -90,25 +84,23 @@ export default function AdminOverviewPage() {
           const d = new Date(apt.starts_at);
           const hourStr = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", hour: "numeric", hour12: false }).format(d);
           const h = Number(hourStr);
-          let bucketKey = "09:00";
-          if (h >= 17) bucketKey = "17:00";
-          else if (h >= 15) bucketKey = "15:00";
-          else if (h >= 13) bucketKey = "13:00";
-          else if (h >= 11) bucketKey = "11:00";
-          else bucketKey = "09:00";
+          if (!Number.isInteger(h) || h < 0 || h > 23) return;
+          const bucketKey = `${String(h).padStart(2, "0")}:00`;
+          const bucket = buckets.get(bucketKey) ?? { confirmed: 0, in_progress: 0 };
 
           if (apt.status === "confirmed") {
-            buckets[bucketKey].confirmed++;
+            bucket.confirmed++;
           } else if (apt.status === "in_progress") {
-            buckets[bucketKey].in_progress++;
+            bucket.in_progress++;
           }
+          buckets.set(bucketKey, bucket);
         } catch {
           // ignore parsing error
         }
       });
     }
 
-    return Object.entries(buckets).map(([time, counts]) => ({
+    return Array.from(buckets.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([time, counts]) => ({
       time,
       confirmed: counts.confirmed,
       in_progress: counts.in_progress,

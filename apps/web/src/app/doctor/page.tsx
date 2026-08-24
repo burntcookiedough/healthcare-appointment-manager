@@ -55,7 +55,7 @@ export default function DoctorTimelinePage() {
           Today&apos;s Clinical Timeline
         </h1>
         <p className="text-xs sm:text-sm text-[#626262] mt-1">
-          {formatDate(new Date(), "EEEE, MMMM d, yyyy")} • {user?.display_name || "Doctor"}
+          {formatDate(new Date(), "EEEE, MMMM d, yyyy")} • {user?.display_name ?? "Name unavailable"}
         </p>
       </div>
 
@@ -121,7 +121,7 @@ export default function DoctorTimelinePage() {
 
                   <div className="space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-base font-bold text-[#111111]">{apt.patient_name}</h3>
+                      <h3 className="text-base font-bold text-[#111111]">{apt.patient_name ?? "Patient name unavailable"}</h3>
                       {(apt.patient_age !== undefined && apt.patient_age !== null) || apt.patient_gender ? (
                         <span className="text-xs font-medium text-[#626262]">
                           ({apt.patient_age !== undefined && apt.patient_age !== null ? `${apt.patient_age} yrs` : "Age not provided"}
@@ -133,7 +133,7 @@ export default function DoctorTimelinePage() {
                     </div>
 
                     <p className="text-xs text-[#626262] line-clamp-2 max-w-xl">
-                      {apt.symptom_summary || "Patient intake recorded. View clinical workspace for details."}
+                      {apt.symptom_summary || "Symptom summary unavailable."}
                     </p>
                   </div>
                 </div>

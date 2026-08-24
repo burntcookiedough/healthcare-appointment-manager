@@ -3,19 +3,25 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { UrgencyLevel } from "@/types/api";
-import { AlertCircle, AlertOctagon, Activity } from "lucide-react";
+import { AlertCircle, AlertOctagon, Activity, Clock3 } from "lucide-react";
 
 interface UrgencyBadgeProps {
-  urgency?: UrgencyLevel | string;
+  urgency?: UrgencyLevel | string | null;
   className?: string;
 }
 
-export function UrgencyBadge({ urgency = "routine", className }: UrgencyBadgeProps) {
-  let label = "Routine";
+export function UrgencyBadge({ urgency, className }: UrgencyBadgeProps) {
+  let label = "Urgency unavailable";
   let bgClass = "bg-[#F6F5F0] text-[#666861] border-[#E5E4DE]";
   let Icon = Activity;
 
-  if (urgency === "urgent") {
+  if (urgency === "routine") {
+    label = "Routine";
+  } else if (urgency === "soon") {
+    label = "Soon";
+    bgClass = "bg-[#EEF3F7] text-[#38556B] border-[#D9E3EA] font-medium";
+    Icon = Clock3;
+  } else if (urgency === "urgent") {
     label = "Urgent";
     bgClass = "bg-[#F7F2DF] text-[#655B36] border-[#E8DEC0] font-medium";
     Icon = AlertCircle;

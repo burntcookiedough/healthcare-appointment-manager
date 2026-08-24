@@ -15,9 +15,9 @@ export default function DoctorSchedulePage() {
   const { user } = useAuth();
   const doctorId = user?.profile_id;
 
-  const { data: doctor, isLoading: isDocLoading } = useQuery({
-    queryKey: ["doctor-detail-schedule", doctorId],
-    queryFn: () => (doctorId ? apiClient.getDoctorDetail(doctorId) : Promise.reject("No doctor ID")),
+  const { data: schedule, isLoading: isScheduleLoading } = useQuery({
+    queryKey: ["doctor-working-hours", doctorId],
+    queryFn: () => (doctorId ? apiClient.getDoctorWorkingHours(doctorId) : Promise.reject("No doctor ID")),
     enabled: Boolean(doctorId),
   });
 
@@ -27,7 +27,7 @@ export default function DoctorSchedulePage() {
     enabled: Boolean(doctorId),
   });
 
-  if (isDocLoading || isLeavesLoading) return <CardSkeleton />;
+  if (isScheduleLoading || isLeavesLoading) return <CardSkeleton />;
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -55,7 +55,7 @@ export default function DoctorSchedulePage() {
           <div>
             <h2 className="text-xl font-bold text-[#111111]">Configured Working Hours</h2>
             <p className="text-xs text-[#626262] mt-0.5">
-              Operating Timezone: <strong>{doctor?.time_zone || "Asia/Kolkata"}</strong> (LEAVE-001)
+              Operating Timezone: <strong>{schedule?.timezone ?? "Timezone unavailable"}</strong> (LEAVE-001)
             </p>
           </div>
           <span className="rounded-lg bg-[#EEF5EF] border border-[#D8E7DB] px-3 py-1 text-xs font-bold text-[#315B43]">
@@ -64,11 +64,11 @@ export default function DoctorSchedulePage() {
         </div>
 
         <div className="space-y-3">
-          {(doctor?.working_hours || []).map((rule, idx) => {
-            const dayIdx = rule.day_of_week ?? rule.weekday ?? 0;
-            const startTime = rule.start_time ?? rule.starts_local ?? "09:00";
-            const endTime = rule.end_time ?? rule.ends_local ?? "17:00";
-            const duration = rule.slot_duration_minutes ?? doctor?.appointment_durations_minutes?.[0] ?? 30;
+          {(schedule?.intervals || []).map((rule, idx) => {
+            const dayIdx = rule.day_of_week ?? rule.weekday;
+            const startTime = rule.start_time ?? rule.starts_local;
+            const endTime = rule.end_time ?? rule.ends_local;
+            const durations = schedule?.appointment_durations_minutes ?? [];
             return (
               <div
                 key={idx}
@@ -76,12 +76,12 @@ export default function DoctorSchedulePage() {
               >
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white border border-[#E5E4DE] text-[#171815] font-bold text-xs">
-                    {DAYS[dayIdx]?.slice(0, 3) || "Mon"}
+                    {dayIdx !== undefined && DAYS[dayIdx] ? DAYS[dayIdx].slice(0, 3) : "Day unavailable"}
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-[#171815]">{DAYS[dayIdx] || "Weekday"}</h4>
+                    <h4 className="text-sm font-bold text-[#171815]">{dayIdx !== undefined && DAYS[dayIdx] ? DAYS[dayIdx] : "Day unavailable"}</h4>
                     <p className="text-xs text-[#666861]">
-                      Slot interval: {duration} minutes
+                      Appointment durations: {durations.length > 0 ? durations.map((duration) => `${duration} minutes`).join(", ") : "Not provided"}
                     </p>
                   </div>
                 </div>
@@ -89,7 +89,7 @@ export default function DoctorSchedulePage() {
                 <div className="flex items-center gap-2 text-xs font-mono font-bold text-[#171815]">
                   <Clock className="h-4 w-4 text-[#666861]" />
                   <span>
-                    {startTime} - {endTime}
+                    {startTime && endTime ? `${startTime} - ${endTime}` : "Hours unavailable"}
                   </span>
                 </div>
               </div>
