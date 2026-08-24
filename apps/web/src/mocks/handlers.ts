@@ -42,7 +42,7 @@ class MockDatabase {
   private appointments: AppointmentDetail[] = JSON.parse(JSON.stringify(MOCK_APPOINTMENTS));
   private holds: Map<string, Hold> = new Map();
   /** In-memory store of issued leave preview tokens (LEAVE-002: single-use). */
-  private leavePreviewTokens: Map<string, { doctor_id: string; starts_at: string; ends_at: string; reason: string; schedule_version: number; issued_at: number }> = new Map();
+  private leavePreviewTokens: Map<string, { doctor_id: string; starts_at: string; ends_at: string; reason: string | null; schedule_version: number; issued_at: number }> = new Map();
   private visits: Map<string, Visit> = new Map([["vis-001-completed", JSON.parse(JSON.stringify(MOCK_VISIT))]]);
   private prescriptions: Map<string, Prescription> = new Map([["rx-001-aarav", JSON.parse(JSON.stringify(MOCK_PRESCRIPTION))]]);
   private leaves: DoctorLeave[] = JSON.parse(JSON.stringify(MOCK_LEAVES));
@@ -203,15 +203,17 @@ class MockDatabase {
     await this.simulateNetwork();
     const newDoc: DoctorDetail = {
       id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      name: req.name,
-      credentials: req.credentials,
-      specialization: req.specialization,
+      name: req.name || req.display_name || "Doctor",
+      credentials: req.credentials || "MBBS, MD",
+      specialization: req.specialization || "General Medicine",
       experience_years: req.experience_years ?? 5,
       consultation_fee: req.consultation_fee ?? 1000,
-      biography: req.biography || `${req.name} is a verified medical specialist in ${req.specialization}.`,
+      biography: req.biography || `${req.name || req.display_name} is a verified medical specialist in ${req.specialization || "General Medicine"}.`,
       languages: req.languages || ["English", "Hindi"],
-      accepted_durations: req.accepted_durations || [15, 30, 45],
-      time_zone: req.time_zone || "Asia/Kolkata",
+      accepted_durations: req.accepted_durations || req.appointment_durations_minutes || [15, 30, 45],
+      appointment_durations_minutes: req.appointment_durations_minutes || req.accepted_durations || [30],
+      time_zone: req.time_zone || req.timezone || "Asia/Kolkata",
+      timezone: req.timezone || req.time_zone || "Asia/Kolkata",
       is_active: true,
       schedule_version: 1,
       next_available_at: new Date().toISOString(),
@@ -242,11 +244,15 @@ class MockDatabase {
     const targetDateInKolkata = new Date(`${dateStr}T12:00:00+05:30`);
     const dayOfWeek = targetDateInKolkata.getDay();
 
-    const rule = doc.working_hours.find((r) => r.day_of_week === dayOfWeek);
+    const rule = (doc.working_hours || []).find(
+      (r) => (r.day_of_week ?? r.weekday) === dayOfWeek
+    );
     if (!rule) return [];
 
-    const [startH, startM] = rule.start_time.split(":").map(Number);
-    const [endH, endM] = rule.end_time.split(":").map(Number);
+    const startTime = rule.start_time ?? rule.starts_local ?? "09:00";
+    const endTime = rule.end_time ?? rule.ends_local ?? "17:00";
+    const [startH, startM] = startTime.split(":").map(Number);
+    const [endH, endM] = endTime.split(":").map(Number);
 
     const slots: AvailabilitySlot[] = [];
 
@@ -365,7 +371,7 @@ class MockDatabase {
       version: 1,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      patient_id: this.activeUser.profile_id,
+      patient_id: this.activeUser.profile_id || "pat-001-aarav",
       doctor_id: req.doctor_id,
       starts_at: req.starts_at,
       ends_at: slotEnd.toISOString(),
@@ -765,7 +771,7 @@ class MockDatabase {
             scheduled_date: todayStr,
             taken: false,
             instructions: item.instructions,
-            route: item.route,
+            route: item.route || "Oral",
           });
         }
       }
@@ -824,7 +830,7 @@ class MockDatabase {
       doctor_id: doctorId,
       starts_at: req.starts_at,
       ends_at: req.ends_at,
-      reason: req.reason,
+      reason: req.reason || null,
       schedule_version: scheduleVersion,
       issued_at: Date.now(),
     });
@@ -961,7 +967,9 @@ class MockDatabase {
         target_type: "appointment",
         attempt_count: 0,
         max_attempts: 3,
+        version: 1,
         created_at: timestampISO,
+        updated_at: timestampISO,
         payload_summary: "Doctor-leave appointment cancellation notification queued.",
       });
 
@@ -975,7 +983,9 @@ class MockDatabase {
         target_type: "appointment",
         attempt_count: 0,
         max_attempts: 3,
+        version: 1,
         created_at: timestampISO,
+        updated_at: timestampISO,
         payload_summary: "Doctor-leave appointment cancellation notification queued.",
       });
     }
@@ -998,18 +1008,27 @@ class MockDatabase {
       apt.cancelled_by = "admin_leave_manager";
       apt.version += 1;
       apt.updated_at = timestampISO;
+      if (!apt.integrations) {
+        apt.integrations = [];
+      }
       apt.integrations.push(
         {
           id: `int-leave-email-${apt.id}`,
           channel: "email",
           state: "pending",
           attempt_count: 0,
+          version: 1,
+          created_at: timestampISO,
+          updated_at: timestampISO,
         },
         {
           id: `int-leave-cal-${apt.id}`,
           channel: "calendar",
           state: "pending",
           attempt_count: 0,
+          version: 1,
+          created_at: timestampISO,
+          updated_at: timestampISO,
         }
       );
     }

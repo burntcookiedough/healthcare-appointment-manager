@@ -64,31 +64,37 @@ export default function DoctorSchedulePage() {
         </div>
 
         <div className="space-y-3">
-          {doctor?.working_hours.map((rule, idx) => (
-            <div
-              key={idx}
-              className="flex items-center justify-between p-4 rounded-xl border border-[#E5E4DE] bg-[#FBFBF8]"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white border border-[#E5E4DE] text-[#171815] font-bold text-xs">
-                  {DAYS[rule.day_of_week].slice(0, 3)}
+          {(doctor?.working_hours || []).map((rule, idx) => {
+            const dayIdx = rule.day_of_week ?? rule.weekday ?? 0;
+            const startTime = rule.start_time ?? rule.starts_local ?? "09:00";
+            const endTime = rule.end_time ?? rule.ends_local ?? "17:00";
+            const duration = rule.slot_duration_minutes ?? doctor?.appointment_durations_minutes?.[0] ?? 30;
+            return (
+              <div
+                key={idx}
+                className="flex items-center justify-between p-4 rounded-xl border border-[#E5E4DE] bg-[#FBFBF8]"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white border border-[#E5E4DE] text-[#171815] font-bold text-xs">
+                    {DAYS[dayIdx]?.slice(0, 3) || "Mon"}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[#171815]">{DAYS[dayIdx] || "Weekday"}</h4>
+                    <p className="text-xs text-[#666861]">
+                      Slot interval: {duration} minutes
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-sm font-bold text-[#171815]">{DAYS[rule.day_of_week]}</h4>
-                  <p className="text-xs text-[#666861]">
-                    Slot interval: {rule.slot_duration_minutes} minutes
-                  </p>
-                </div>
-              </div>
 
-              <div className="flex items-center gap-2 text-xs font-mono font-bold text-[#171815]">
-                <Clock className="h-4 w-4 text-[#666861]" />
-                <span>
-                  {rule.start_time} - {rule.end_time}
-                </span>
+                <div className="flex items-center gap-2 text-xs font-mono font-bold text-[#171815]">
+                  <Clock className="h-4 w-4 text-[#666861]" />
+                  <span>
+                    {startTime} - {endTime}
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

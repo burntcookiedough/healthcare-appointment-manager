@@ -128,7 +128,7 @@ export default function DoctorDetailPage() {
           <div className="rounded-xl border border-[#E5E4DE] bg-[#FBFBF8] p-4 text-center sm:min-w-[160px] space-y-1">
             <span className="text-[11px] font-medium text-[#666861] block">Consultation Fee</span>
             <span className="text-2xl font-black text-[#171815]">
-              {formatCurrencyINR(doctor.consultation_fee)}
+              {formatCurrencyINR(doctor.consultation_fee ?? 1000)}
             </span>
             <span className="text-[10px] text-[#666861] block">per session</span>
           </div>
@@ -139,19 +139,19 @@ export default function DoctorDetailPage() {
           <div className="flex items-center gap-2 text-[#666861]">
             <Award className="h-4 w-4 text-[#315B43]" />
             <span>
-              Experience: <strong className="text-[#171815]">{doctor.experience_years} Years</strong>
+              Experience: <strong className="text-[#171815]">{doctor.experience_years ?? 5} Years</strong>
             </span>
           </div>
           <div className="flex items-center gap-2 text-[#666861]">
             <Globe className="h-4 w-4 text-[#315B43]" />
             <span>
-              Languages: <strong className="text-[#171815]">{doctor.languages.join(", ")}</strong>
+              Languages: <strong className="text-[#171815]">{(doctor.languages || ["English", "Hindi"]).join(", ")}</strong>
             </span>
           </div>
           <div className="flex items-center gap-2 text-[#666861]">
             <Clock className="h-4 w-4 text-[#315B43]" />
             <span>
-              Timezone: <strong className="text-[#171815]">{doctor.time_zone}</strong>
+              Timezone: <strong className="text-[#171815]">{doctor.timezone || doctor.time_zone || "Asia/Kolkata"}</strong>
             </span>
           </div>
         </div>

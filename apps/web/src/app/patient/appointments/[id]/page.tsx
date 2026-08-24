@@ -68,7 +68,9 @@ export default function PatientAppointmentDetailPage() {
   // Cancel Mutation
   const cancelMutation = useMutation({
     mutationFn: async () => {
-      return apiClient.cancelAppointment(appointmentId, cancelReason, "patient");
+      return apiClient.cancelAppointment(appointmentId, cancelReason, "patient", {
+        expectedVersion: appointment?.version ?? 1,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["appointment-detail", appointmentId] });
@@ -92,7 +94,9 @@ export default function PatientAppointmentDetailPage() {
   const rescheduleMutation = useMutation({
     mutationFn: async () => {
       if (!rescheduleSlot) throw new Error("Please select a new time slot");
-      return apiClient.rescheduleAppointment(appointmentId, rescheduleSlot, 30);
+      return apiClient.rescheduleAppointment(appointmentId, rescheduleSlot, 30, {
+        expectedVersion: appointment?.version ?? 1,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["appointment-detail", appointmentId] });
@@ -219,7 +223,7 @@ export default function PatientAppointmentDetailPage() {
               Submitted Symptoms (Original Source)
             </h3>
             <span className="text-[11px] text-[#8e8e89]">
-              Recorded: {formatDateTime(appointment.symptoms_recorded_at)}
+              Recorded: {formatDateTime(appointment.symptoms_recorded_at || appointment.created_at)}
             </span>
           </div>
           <p className="text-sm text-[#111111] leading-relaxed whitespace-pre-wrap">

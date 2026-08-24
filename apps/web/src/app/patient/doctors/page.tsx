@@ -127,11 +127,11 @@ export default function DoctorDiscoveryPage() {
                 <div className="grid grid-cols-2 gap-2 rounded-2xl border border-[#f0f0eb] bg-[#fbfbf8] p-3 text-xs">
                   <div>
                     <span className="text-[#8e8e89] block text-[11px]">Experience</span>
-                    <span className="font-bold text-[#111111]">{doc.experience_years} Years</span>
+                    <span className="font-bold text-[#111111]">{doc.experience_years ?? 5} Years</span>
                   </div>
                   <div>
                     <span className="text-[#8e8e89] block text-[11px]">Consultation Fee</span>
-                    <span className="font-bold text-[#111111]">{formatCurrencyINR(doc.consultation_fee)}</span>
+                    <span className="font-bold text-[#111111]">{formatCurrencyINR(doc.consultation_fee ?? 1000)}</span>
                   </div>
                 </div>
 

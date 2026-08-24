@@ -31,7 +31,7 @@ async function captureObservableSnapshot(
     }
   }
   return {
-    doctorScheduleVersion: doc.schedule_version,
+    doctorScheduleVersion: doc.schedule_version ?? 1,
     leaves,
     appointments,
     integrations,

@@ -36,8 +36,8 @@ export default function AdminAppointmentsPage() {
         if (!searchQuery.trim()) return true;
         const q = searchQuery.toLowerCase();
         return (
-          a.patient_name.toLowerCase().includes(q) ||
-          a.doctor_name.toLowerCase().includes(q) ||
+          (a.patient_name || "").toLowerCase().includes(q) ||
+          (a.doctor_name || "").toLowerCase().includes(q) ||
           a.id.toLowerCase().includes(q)
         );
       });
@@ -114,10 +114,10 @@ export default function AdminAppointmentsPage() {
                       <div className="font-mono font-bold text-[#111111]">{apt.id}</div>
                       <div className="text-[11px] text-[#8e8e89]">{formatDate(apt.starts_at)}</div>
                     </td>
-                    <td className="py-4 px-6 font-bold text-[#111111]">{apt.patient_name}</td>
+                    <td className="py-4 px-6 font-bold text-[#111111]">{apt.patient_name || "Patient"}</td>
                     <td className="py-4 px-6">
-                      <div className="font-semibold text-[#111111]">{apt.doctor_name}</div>
-                      <div className="text-[11px] text-[#626262]">{apt.doctor_specialization}</div>
+                      <div className="font-semibold text-[#111111]">{apt.doctor_name || "Doctor"}</div>
+                      <div className="text-[11px] text-[#626262]">{apt.doctor_specialization || "General"}</div>
                     </td>
                     <td className="py-4 px-6 font-mono text-[#111111]">
                       {formatTime(apt.starts_at)} - {formatTime(apt.ends_at)}
@@ -127,7 +127,7 @@ export default function AdminAppointmentsPage() {
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-1.5">
-                        {apt.integrations.map((item) => (
+                        {(apt.integrations || []).map((item) => (
                           <StatusBadge key={item.id} status={item.state} size="sm" />
                         ))}
                       </div>

@@ -146,7 +146,7 @@ export default function AdminDoctorsPage() {
                     <td className="py-4 px-6 font-semibold text-[#111111]">{doc.specialization}</td>
                     <td className="py-4 px-6 text-[#626262]">{doc.experience_years} Years</td>
                     <td className="py-4 px-6 font-bold text-[#111111]">
-                      {formatCurrencyINR(doc.consultation_fee)}
+                      {formatCurrencyINR(doc.consultation_fee ?? 1000)}
                     </td>
                     <td className="py-4 px-6">
                       <span className="inline-flex items-center gap-1 rounded-lg bg-[#EEF5EF] border border-[#D8E7DB] px-2.5 py-0.5 text-xs font-semibold text-[#315B43]">

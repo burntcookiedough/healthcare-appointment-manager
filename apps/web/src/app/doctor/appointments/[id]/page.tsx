@@ -93,7 +93,7 @@ export default function DoctorAppointmentWorkspacePage() {
                   <span className="text-sm font-semibold text-[#666861]">(Demographics not provided)</span>
                 )}
                 <StatusBadge status={appointment.status} size="sm" />
-                <UrgencyBadge urgency={appointment.urgency} />
+                <UrgencyBadge urgency={appointment.urgency || undefined} />
               </div>
               <p className="text-xs text-[#666861] mt-0.5">
                 Patient ID: {appointment.patient_id} • Booking: {appointment.id}
@@ -234,7 +234,7 @@ export default function DoctorAppointmentWorkspacePage() {
                 </h3>
               </div>
               <span className="text-[10px] text-[#666861]">
-                {formatDateTime(appointment.symptoms_recorded_at)}
+                {formatDateTime(appointment.symptoms_recorded_at || appointment.created_at)}
               </span>
             </div>
 

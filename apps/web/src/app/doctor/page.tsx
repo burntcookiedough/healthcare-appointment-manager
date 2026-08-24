@@ -129,7 +129,7 @@ export default function DoctorTimelinePage() {
                         </span>
                       ) : null}
                       <StatusBadge status={apt.status} size="sm" />
-                      <UrgencyBadge urgency={apt.urgency} />
+                      <UrgencyBadge urgency={apt.urgency || undefined} />
                     </div>
 
                     <p className="text-xs text-[#626262] line-clamp-2 max-w-xl">

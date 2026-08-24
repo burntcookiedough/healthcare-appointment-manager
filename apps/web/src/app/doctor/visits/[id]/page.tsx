@@ -134,7 +134,9 @@ export default function DoctorVisitEditorPage() {
   // Draft Save Mutation
   const draftMutation = useMutation({
     mutationFn: async () => {
-      return apiClient.saveVisitDraft(visitId, notes, diagnosis, prescriptionItems);
+      return apiClient.saveVisitDraft(visitId, notes, diagnosis, prescriptionItems, {
+        expectedVersion: visit?.version ?? 1,
+      });
     },
     onSuccess: () => {
       toast.success("Visit draft saved.");
@@ -148,7 +150,9 @@ export default function DoctorVisitEditorPage() {
   // Finalize Mutation (VISIT-002)
   const finalizeMutation = useMutation({
     mutationFn: async () => {
-      return apiClient.completeVisit(visitId, notes, diagnosis, prescriptionItems, followUp);
+      return apiClient.completeVisit(visitId, notes, diagnosis, prescriptionItems, followUp, {
+        expectedVersion: visit?.version ?? 1,
+      });
     },
     onSuccess: () => {
       toast.success("Consultation completed and prescription finalized.");
@@ -330,7 +334,7 @@ export default function DoctorVisitEditorPage() {
 
                   <Select
                     label="Route of Administration"
-                    value={item.route}
+                    value={item.route || "Oral"}
                     disabled={isCompleted}
                     onChange={(e) => handleItemChange(item.id, "route", e.target.value)}
                     options={ROUTE_OPTIONS}

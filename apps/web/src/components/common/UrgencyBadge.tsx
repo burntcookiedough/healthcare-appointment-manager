@@ -6,7 +6,7 @@ import { UrgencyLevel } from "@/types/api";
 import { AlertCircle, AlertOctagon, Activity } from "lucide-react";
 
 interface UrgencyBadgeProps {
-  urgency?: UrgencyLevel;
+  urgency?: UrgencyLevel | string;
   className?: string;
 }
 

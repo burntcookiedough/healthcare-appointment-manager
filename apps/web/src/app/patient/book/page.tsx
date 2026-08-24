@@ -241,9 +241,9 @@ function BookingWizardContent() {
                     <Stethoscope className="h-5 w-5" />
                   </div>
                   <div>
-                    <div className="text-sm font-bold text-[#111111]">{doc.name}</div>
+                    <div className="text-sm font-bold text-[#111111]">{doc.name || doc.display_name}</div>
                     <div className="text-xs text-[#26734d] font-semibold">{doc.specialization}</div>
-                    <div className="text-xs text-[#626262]">{formatCurrencyINR(doc.consultation_fee)}</div>
+                    <div className="text-xs text-[#626262]">{formatCurrencyINR(doc.consultation_fee ?? 1000)}</div>
                   </div>
                 </div>
               </button>
@@ -261,10 +261,10 @@ function BookingWizardContent() {
                 <Stethoscope className="h-6 w-6" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-[#111111]">{selectedDoctor.name}</h2>
+                <h2 className="text-xl font-bold text-[#111111]">{selectedDoctor.name || selectedDoctor.display_name}</h2>
                 <p className="text-xs font-medium text-[#626262]">
-                  {selectedDoctor.specialization} • {selectedDoctor.experience_years} yrs exp •{" "}
-                  {formatCurrencyINR(selectedDoctor.consultation_fee)}
+                  {selectedDoctor.specialization} • {selectedDoctor.experience_years ?? 5} yrs exp •{" "}
+                  {formatCurrencyINR(selectedDoctor.consultation_fee ?? 1000)}
                 </p>
               </div>
             </div>
@@ -432,7 +432,7 @@ function BookingWizardContent() {
               <div>
                 <span className="text-[#8e8e89] block">Fee</span>
                 <span className="font-bold text-[#111111]">
-                  {formatCurrencyINR(selectedDoctor.consultation_fee)}
+                  {formatCurrencyINR(selectedDoctor.consultation_fee ?? 1000)}
                 </span>
                 <span className="text-[#26734d] font-semibold block">Pay at Clinic</span>
               </div>
