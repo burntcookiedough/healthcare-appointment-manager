@@ -58,12 +58,12 @@ export default function PatientVisitSummaryPage() {
       {/* Header Card */}
       <div className="rounded-2xl border border-[#E5E4DE] bg-white p-6 sm:p-8 shadow-xs space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#F6F5F0] pb-6">
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 items-start sm:items-center gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#EEF5EF] text-[#315B43] border border-[#D8E7DB]">
               <FileText className="h-7 w-7" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <h1 className="text-xl font-bold text-[#171815]">Consultation Summary & Notes</h1>
                 <StatusBadge status="completed" size="sm" />
               </div>
@@ -77,8 +77,9 @@ export default function PatientVisitSummaryPage() {
             variant="outline"
             size="sm"
             onClick={() => toast.success("Digital consultation summary downloaded (PDF).")}
+            className="w-full sm:w-auto whitespace-normal text-center leading-tight"
           >
-            <Download className="h-3.5 w-3.5" />
+            <Download className="h-3.5 w-3.5 shrink-0" />
             <span>Download Summary</span>
           </Button>
         </div>

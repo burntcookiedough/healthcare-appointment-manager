@@ -76,12 +76,12 @@ export default function DoctorAppointmentWorkspacePage() {
       {/* Patient & Consultation Summary Card */}
       <div className="rounded-2xl border border-[#E5E4DE] bg-white p-6 sm:p-8 shadow-xs space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#F6F5F0] pb-6">
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 items-start sm:items-center gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#EEF3F7] text-[#38556B] border border-[#D9E3EA]">
               <User className="h-7 w-7" />
             </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2.5">
+            <div className="min-w-0">
+              <div className="flex min-w-0 flex-wrap items-center gap-2.5">
                 <h1 className="text-2xl font-black text-[#171815]">
                   {appointment.patient_name}
                 </h1>
@@ -97,11 +97,16 @@ export default function DoctorAppointmentWorkspacePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex w-full sm:w-auto items-center gap-2.5">
             {appointment.visit_id ? (
-              <Button asChild variant="primary" size="default">
+              <Button
+                asChild
+                variant="primary"
+                size="default"
+                className="w-full sm:w-auto whitespace-normal text-center leading-tight"
+              >
                 <Link href={`/doctor/visits/${appointment.visit_id}`}>
-                  <FileText className="h-4 w-4" />
+                  <FileText className="h-4 w-4 shrink-0" />
                   <span>Resume Consultation Notes</span>
                 </Link>
               </Button>
@@ -111,8 +116,9 @@ export default function DoctorAppointmentWorkspacePage() {
                 size="default"
                 onClick={() => openVisitMutation.mutate()}
                 isLoading={openVisitMutation.isPending}
+                className="w-full sm:w-auto whitespace-normal text-center leading-tight"
               >
-                <Stethoscope className="h-4 w-4" />
+                <Stethoscope className="h-4 w-4 shrink-0" />
                 <span>Start Consultation & Open Notes</span>
               </Button>
             )}
