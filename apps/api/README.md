@@ -23,3 +23,9 @@ audience, and lifetime) and fails closed when verification settings are absent. 
 `APP_ENV` is `local`, `development`, or `test`. Set `DATABASE_URL` to the local PostgreSQL
 17 service from the repository root compose file. Integration/concurrency tests require
 an isolated `HEALTHCARE_TEST_DATABASE_URL` or `TEST_DATABASE_URL`.
+
+For direct browser calls from the Vercel frontend, set `CORS_ALLOWED_ORIGINS` to a
+comma-separated list of exact `http` or `https` origins (for example,
+`https://healthcare.example,https://preview.vercel.app`). It is empty by default, which
+disables cross-origin access. Wildcards, paths, credentials in the URL, and malformed
+origins fail closed and do not enable CORS.

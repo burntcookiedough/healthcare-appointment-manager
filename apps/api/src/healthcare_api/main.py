@@ -7,8 +7,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 
-from .config import get_settings
+from .config import Settings, get_settings
 from .db import engine
 from .errors import (
     ApiError,
@@ -30,8 +31,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await engine.dispose()
 
 
-def create_app() -> FastAPI:
-    settings = get_settings()
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or get_settings()
     configure_logging(settings.log_level)
     app = FastAPI(
         title="Healthcare Appointment and Follow-up API",
@@ -42,6 +43,16 @@ def create_app() -> FastAPI:
         redoc_url=f"{settings.api_prefix}/redoc",
         lifespan=lifespan,
     )
+
+    if settings.cors_allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_allowed_origins,
+            allow_methods=("GET", "POST", "PATCH", "PUT", "DELETE"),
+            allow_headers=("Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"),
+            allow_credentials=True,
+            expose_headers=("X-Request-ID",),
+        )
     app.add_middleware(RequestIdMiddleware)
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
