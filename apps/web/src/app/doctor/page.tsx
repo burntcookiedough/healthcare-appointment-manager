@@ -23,6 +23,7 @@ export default function DoctorTimelinePage() {
   const { data: appointments, isLoading, error } = useQuery({
     queryKey: ["doctor-appointments", user?.profile_id],
     queryFn: () => apiClient.getAppointments("doctor"),
+    enabled: Boolean(user?.profile_id),
   });
 
   const todayAppointments = React.useMemo(() => {

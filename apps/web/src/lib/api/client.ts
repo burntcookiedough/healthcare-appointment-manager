@@ -32,26 +32,42 @@ import {
   ApiErrorEnvelope,
 } from "@/types/api";
 import { formatDateOnly } from "@/lib/dates";
+import {
+  getStoredSession,
+  refreshSessionDeduplicated,
+  clearStoredSession,
+} from "@/features/auth/supabase-auth";
 
-const isDemoMode = (): boolean => {
-  if (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_DEMO_MODE === "true") {
-    return true;
+export const isDemoMode = (): boolean => {
+  if (typeof process !== "undefined") {
+    if (process.env?.NEXT_PUBLIC_DEMO_MODE === "true") {
+      return true;
+    }
+    if (process.env?.NEXT_PUBLIC_DEMO_MODE === "false") {
+      return false;
+    }
   }
-  if (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_DEMO_MODE === "false") {
-    return false;
-  }
-  // Default to demo mode if no API URL is configured
-  return !process.env.NEXT_PUBLIC_API_BASE_URL;
+  // Default to true ONLY if neither API URL nor Supabase URL is configured
+  const hasApi = Boolean(process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL);
+  const hasSupabase = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  return !hasApi && !hasSupabase;
 };
 
-const getApiBaseUrl = (): string => {
-  return (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
+export const getApiBaseUrl = (): string => {
+  const raw = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || "";
+  return raw.replace(/\/api\/v1\/?$/, "").replace(/\/$/, "");
 };
 
 let activeAuthToken: string | null = null;
 
 export function setApiAuthToken(token: string | null): void {
   activeAuthToken = token;
+}
+
+export function getApiAuthToken(): string | null {
+  if (activeAuthToken) return activeAuthToken;
+  const session = getStoredSession();
+  return session?.access_token || null;
 }
 
 function generateIdempotencyKey(prefix = "idem"): string {
@@ -67,10 +83,39 @@ async function requestHttp<T>(
     headers?: Record<string, string>;
     idempotent?: boolean;
     expectedVersion?: number;
+    skipAuthRefresh?: boolean;
   } = {}
 ): Promise<T> {
   const method = options.method || "GET";
   const baseUrl = getApiBaseUrl();
+
+  if (!baseUrl) {
+    throw {
+      status: 500,
+      error: {
+        code: "CONFIG_ERROR",
+        message: "Missing NEXT_PUBLIC_API_BASE_URL (or NEXT_PUBLIC_API_URL) in production mode.",
+      },
+      request_id: `req-config-${Date.now()}`,
+    };
+  }
+
+  const token = getApiAuthToken();
+
+  // Public discovery endpoints allow unauthenticated read access.
+  // All other endpoints require an authenticated access token.
+  const isPublicDiscovery = (path.startsWith("/doctors") && method === "GET" && !path.includes("/working-hours") && !path.includes("/leave"));
+  if (!token && !isPublicDiscovery) {
+    throw {
+      status: 401,
+      error: {
+        code: "AUTHENTICATION_REQUIRED",
+        message: "Authentication token required for protected endpoint.",
+      },
+      request_id: `req-auth-${Date.now()}`,
+    };
+  }
+
   const url = `${baseUrl}/api/v1${path}`;
 
   const headers: Record<string, string> = {
@@ -78,13 +123,8 @@ async function requestHttp<T>(
     ...options.headers,
   };
 
-  if (activeAuthToken) {
-    headers["Authorization"] = `Bearer ${activeAuthToken}`;
-  } else if (typeof window !== "undefined") {
-    const storedToken = localStorage.getItem("supabase_access_token");
-    if (storedToken) {
-      headers["Authorization"] = `Bearer ${storedToken}`;
-    }
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   if (options.idempotent && (method === "POST" || method === "PUT" || method === "DELETE")) {
@@ -93,9 +133,12 @@ async function requestHttp<T>(
 
   let bodyContent: string | undefined = undefined;
   if (options.body !== undefined) {
-    const payload = options.expectedVersion !== undefined && typeof options.body === "object" && options.body !== null
-      ? { ...(options.body as Record<string, unknown>), expected_version: options.expectedVersion }
-      : options.body;
+    const payload =
+      options.expectedVersion !== undefined &&
+      typeof options.body === "object" &&
+      options.body !== null
+        ? { ...(options.body as Record<string, unknown>), expected_version: options.expectedVersion }
+        : options.body;
     bodyContent = JSON.stringify(payload);
   }
 
@@ -104,6 +147,17 @@ async function requestHttp<T>(
     headers,
     body: bodyContent,
   });
+
+  // Handle 401 token expiry with automatic single refresh & retry
+  if (response.status === 401 && !options.skipAuthRefresh) {
+    const refreshed = await refreshSessionDeduplicated(setApiAuthToken);
+    if (refreshed && refreshed.access_token) {
+      return requestHttp<T>(path, { ...options, skipAuthRefresh: true });
+    } else {
+      clearStoredSession();
+      setApiAuthToken(null);
+    }
+  }
 
   if (response.status === 204) {
     return undefined as unknown as T;
@@ -135,6 +189,7 @@ export const apiClient = {
   // Test isolation reset
   reset: (): void => {
     mockDb.reset();
+    setApiAuthToken(null);
   },
 
   // Auth / Context
@@ -144,6 +199,11 @@ export const apiClient = {
   },
 
   setUserRole: (role: UserRole): UserContext => {
+    if (!isDemoMode()) {
+      throw new Error(
+        "apiClient.setUserRole is only supported in demo mode (NEXT_PUBLIC_DEMO_MODE=true). In production, role is derived solely from the Supabase session and GET /me."
+      );
+    }
     return mockDb.setUserRole(role);
   },
 

@@ -24,7 +24,7 @@ import { toast } from "sonner";
 
 export default function PatientDashboard() {
   const { user } = useAuth();
-  const patientId = user?.profile_id || "pat-001-aarav";
+  const patientId = user?.profile_id;
 
   // Query appointments
   const {
@@ -34,6 +34,7 @@ export default function PatientDashboard() {
   } = useQuery({
     queryKey: ["patient-appointments", patientId],
     queryFn: () => apiClient.getAppointments("patient"),
+    enabled: Boolean(patientId),
   });
 
   // Query medication reminders
@@ -42,7 +43,8 @@ export default function PatientDashboard() {
     isLoading: isRemindersLoading,
   } = useQuery({
     queryKey: ["patient-reminders", patientId],
-    queryFn: () => apiClient.getPatientReminders(patientId),
+    queryFn: () => (patientId ? apiClient.getPatientReminders(patientId) : Promise.resolve([])),
+    enabled: Boolean(patientId),
   });
 
   const [takenDoses, setTakenDoses] = React.useState<Record<string, boolean>>({});

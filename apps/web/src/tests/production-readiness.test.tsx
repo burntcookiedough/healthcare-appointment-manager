@@ -29,6 +29,7 @@ function createTestQueryClient() {
 
 describe("Production Readiness & Contract Compliance Suite", () => {
   beforeEach(() => {
+    process.env.NEXT_PUBLIC_DEMO_MODE = "true";
     apiClient.reset();
     localStorage.clear();
   });
@@ -95,7 +96,7 @@ describe("Production Readiness & Contract Compliance Suite", () => {
       );
 
       // Default role is patient -> should show Role Mismatch Barrier
-      expect(screen.getByText(/Access Barrier & Role Mismatch/i)).toBeInTheDocument();
+      expect(screen.getByText(/Access Denied: Role Restricted/i)).toBeInTheDocument();
       expect(screen.queryByText("Doctor Protected Content")).not.toBeInTheDocument();
     });
   });

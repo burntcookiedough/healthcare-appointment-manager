@@ -11,11 +11,12 @@ import { toast } from "sonner";
 
 export default function PatientPrescriptionsPage() {
   const { user } = useAuth();
-  const patientId = user?.profile_id || "pat-001-aarav";
+  const patientId = user?.profile_id;
 
   const { data: reminders, isLoading } = useQuery({
     queryKey: ["patient-prescriptions-reminders", patientId],
-    queryFn: () => apiClient.getPatientReminders(patientId),
+    queryFn: () => (patientId ? apiClient.getPatientReminders(patientId) : Promise.resolve([])),
+    enabled: Boolean(patientId),
   });
 
   const [takenMap, setTakenMap] = React.useState<Record<string, boolean>>({});

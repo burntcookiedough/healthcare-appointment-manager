@@ -21,10 +21,12 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
                   <span className="h-2 w-2 rounded-xs bg-[#315B43]" aria-hidden="true" />
                   <span>Patient Portal</span>
                 </div>
-                <span className="text-xs text-[#666861]">· ID: {user?.profile_id || "pat-001-aarav"}</span>
+                {user?.profile_id && (
+                  <span className="text-xs text-[#666861]">· ID: {user.profile_id}</span>
+                )}
               </div>
               <div className="mt-1 text-xl sm:text-2xl font-bold tracking-tight text-[#171815]">
-                Patient: {user?.display_name || "Aarav Sharma"}
+                {user?.display_name ? `Patient: ${user.display_name}` : "Patient Portal"}
               </div>
             </div>
 

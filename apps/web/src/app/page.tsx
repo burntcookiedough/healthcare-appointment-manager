@@ -19,7 +19,7 @@ import {
 
 export default function LandingPage() {
   const router = useRouter();
-  const { setRole } = useAuth();
+  const { setRole, isDemoMode } = useAuth();
 
   const handleLaunchRole = (role: "patient" | "doctor" | "admin") => {
     setRole(role);
@@ -60,7 +60,7 @@ export default function LandingPage() {
                 size="lg"
                 className="px-6 text-sm font-semibold"
                 onClick={() => {
-                  setRole("patient");
+                  if (isDemoMode) setRole("patient");
                   router.push("/patient/book");
                 }}
               >
@@ -70,7 +70,7 @@ export default function LandingPage() {
 
               <Button asChild variant="outline" size="lg" className="px-6 text-sm font-semibold">
                 <Link href="/login">
-                  <span>Explore Demo Roles</span>
+                  <span>{isDemoMode ? "Explore Demo Roles" : "Sign In / Register"}</span>
                 </Link>
               </Button>
             </div>

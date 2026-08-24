@@ -13,16 +13,18 @@ const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", 
 
 export default function DoctorSchedulePage() {
   const { user } = useAuth();
-  const doctorId = user?.profile_id || "doc-001-rajesh";
+  const doctorId = user?.profile_id;
 
   const { data: doctor, isLoading: isDocLoading } = useQuery({
     queryKey: ["doctor-detail-schedule", doctorId],
-    queryFn: () => apiClient.getDoctorDetail(doctorId),
+    queryFn: () => (doctorId ? apiClient.getDoctorDetail(doctorId) : Promise.reject("No doctor ID")),
+    enabled: Boolean(doctorId),
   });
 
   const { data: leaves, isLoading: isLeavesLoading } = useQuery({
     queryKey: ["doctor-leaves", doctorId],
-    queryFn: () => apiClient.getDoctorLeaves(doctorId),
+    queryFn: () => (doctorId ? apiClient.getDoctorLeaves(doctorId) : Promise.resolve([])),
+    enabled: Boolean(doctorId),
   });
 
   if (isDocLoading || isLeavesLoading) return <CardSkeleton />;

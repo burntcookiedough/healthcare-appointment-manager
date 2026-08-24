@@ -16,10 +16,11 @@ import {
   Menu,
   X,
   ArrowUpRight,
+  LogOut,
 } from "lucide-react";
 
 export function Navbar() {
-  const { role, setRole } = useAuth();
+  const { user, role, isDemoMode, setRole, logout } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = React.useState(false);
@@ -48,7 +49,7 @@ export function Navbar() {
         { href: "/doctor", label: "Today's Timeline" },
         { href: "/doctor/schedule", label: "Working Hours & Leave" },
       ];
-    } else {
+    } else if (role === "admin") {
       return [
         { href: "/admin", label: "Overview" },
         { href: "/admin/doctors", label: "Doctor Roster" },
@@ -57,6 +58,7 @@ export function Navbar() {
         { href: "/admin/integrations", label: "Integrations & Health" },
       ];
     }
+    return [];
   }, [role]);
 
   const isPublicPage = pathname === "/" || pathname === "/login";
@@ -67,7 +69,7 @@ export function Navbar() {
         {/* Brand Logo */}
         <div className="flex items-center gap-6">
           <Link
-            href={isPublicPage ? "/" : `/${role}`}
+            href={isPublicPage ? "/" : role ? `/${role}` : "/"}
             className="flex min-h-[44px] items-center gap-2.5 font-bold tracking-tight text-[#171815] transition-opacity hover:opacity-85"
           >
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#171815] text-white">
@@ -101,7 +103,7 @@ export function Navbar() {
           )}
         </div>
 
-        {/* Right Side: Demo Role Switcher & User Profile */}
+        {/* Right Side: Demo Role Switcher or Production User Controls */}
         <div className="flex items-center gap-3">
           {/* Active Timezone Badge */}
           <div className="hidden lg:flex items-center gap-1 rounded-lg border border-[#E5E4DE] bg-white px-2.5 py-1 text-[11px] font-medium text-[#666861]">
@@ -109,72 +111,107 @@ export function Navbar() {
             <span>IST (UTC+5:30)</span>
           </div>
 
-          {/* Role Switcher */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-              className="flex min-h-[44px] items-center gap-2 rounded-lg border border-[#E5E4DE] bg-white px-3.5 py-2 text-xs font-semibold text-[#171815] shadow-xs transition-colors hover:bg-[#F6F5F0] focus-visible:ring-2 focus-visible:ring-[#171815]"
-              aria-label="Switch User Role"
-              aria-expanded={isRoleDropdownOpen}
-            >
-              {role === "patient" && <User className="h-3.5 w-3.5 text-[#315B43]" aria-hidden="true" />}
-              {role === "doctor" && <Stethoscope className="h-3.5 w-3.5 text-[#38556B]" aria-hidden="true" />}
-              {role === "admin" && <ShieldCheck className="h-3.5 w-3.5 text-[#655B36]" aria-hidden="true" />}
-              <span className="capitalize">{role} View</span>
-              <ChevronDown className="h-3 w-3 text-[#666861]" aria-hidden="true" />
-            </button>
+          {/* Demo Persona Switcher */}
+          {isDemoMode ? (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
+                className="flex min-h-[44px] items-center gap-2 rounded-lg border border-[#E5E4DE] bg-white px-3.5 py-2 text-xs font-semibold text-[#171815] shadow-xs transition-colors hover:bg-[#F6F5F0] focus-visible:ring-2 focus-visible:ring-[#171815]"
+                aria-label="Switch User Role"
+                aria-expanded={isRoleDropdownOpen}
+              >
+                {role === "patient" && <User className="h-3.5 w-3.5 text-[#315B43]" aria-hidden="true" />}
+                {role === "doctor" && <Stethoscope className="h-3.5 w-3.5 text-[#38556B]" aria-hidden="true" />}
+                {role === "admin" && <ShieldCheck className="h-3.5 w-3.5 text-[#655B36]" aria-hidden="true" />}
+                <span className="capitalize">{role || "Select"} View</span>
+                <ChevronDown className="h-3 w-3 text-[#666861]" aria-hidden="true" />
+              </button>
 
-            {isRoleDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-56 rounded-xl border border-[#E5E4DE] bg-white p-2 shadow-lg z-50 animate-in fade-in zoom-in-95">
-                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#666861]">
-                  Switch Demo Persona
+              {isRoleDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-56 rounded-xl border border-[#E5E4DE] bg-white p-2 shadow-lg z-50 animate-in fade-in zoom-in-95">
+                  <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#666861]">
+                    Switch Demo Persona
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRoleChange("patient")}
+                    className={cn(
+                      "flex w-full min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs transition-colors",
+                      role === "patient" ? "bg-[#EEF5EF] text-[#315B43] font-semibold" : "hover:bg-[#F6F5F0]"
+                    )}
+                  >
+                    <User className="h-4 w-4 text-[#315B43]" />
+                    <div>
+                      <div>Patient Persona</div>
+                      <div className="text-[10px] text-[#666861]">Aarav Sharma</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRoleChange("doctor")}
+                    className={cn(
+                      "flex w-full min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs transition-colors",
+                      role === "doctor" ? "bg-[#EEF3F7] text-[#38556B] font-semibold" : "hover:bg-[#F6F5F0]"
+                    )}
+                  >
+                    <Stethoscope className="h-4 w-4 text-[#38556B]" />
+                    <div>
+                      <div>Doctor Persona</div>
+                      <div className="text-[10px] text-[#666861]">Dr. Rajesh Verma (Cardiology)</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRoleChange("admin")}
+                    className={cn(
+                      "flex w-full min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs transition-colors",
+                      role === "admin" ? "bg-[#F7F2DF] text-[#655B36] font-semibold" : "hover:bg-[#F6F5F0]"
+                    )}
+                  >
+                    <ShieldCheck className="h-4 w-4 text-[#655B36]" />
+                    <div>
+                      <div>Administrator Persona</div>
+                      <div className="text-[10px] text-[#666861]">Clinic Operations Admin</div>
+                    </div>
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleRoleChange("patient")}
-                  className={cn(
-                    "flex w-full min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs transition-colors",
-                    role === "patient" ? "bg-[#EEF5EF] text-[#315B43] font-semibold" : "hover:bg-[#F6F5F0]"
-                  )}
-                >
-                  <User className="h-4 w-4 text-[#315B43]" />
-                  <div>
-                    <div>Patient Persona</div>
-                    <div className="text-[10px] text-[#666861]">Aarav Sharma</div>
+              )}
+            </div>
+          ) : user ? (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-lg border border-[#E5E4DE] bg-white px-3 py-1.5 text-xs">
+                {user.role === "patient" && <User className="h-3.5 w-3.5 text-[#315B43]" aria-hidden="true" />}
+                {user.role === "doctor" && <Stethoscope className="h-3.5 w-3.5 text-[#38556B]" aria-hidden="true" />}
+                {user.role === "admin" && <ShieldCheck className="h-3.5 w-3.5 text-[#655B36]" aria-hidden="true" />}
+                <div className="text-left">
+                  <div className="font-bold text-[#171815] max-w-[120px] sm:max-w-[160px] truncate">
+                    {user.display_name || user.email}
                   </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleRoleChange("doctor")}
-                  className={cn(
-                    "flex w-full min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs transition-colors",
-                    role === "doctor" ? "bg-[#EEF3F7] text-[#38556B] font-semibold" : "hover:bg-[#F6F5F0]"
-                  )}
-                >
-                  <Stethoscope className="h-4 w-4 text-[#38556B]" />
-                  <div>
-                    <div>Doctor Persona</div>
-                    <div className="text-[10px] text-[#666861]">Dr. Rajesh Verma (Cardiology)</div>
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleRoleChange("admin")}
-                  className={cn(
-                    "flex w-full min-h-[44px] items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs transition-colors",
-                    role === "admin" ? "bg-[#F7F2DF] text-[#655B36] font-semibold" : "hover:bg-[#F6F5F0]"
-                  )}
-                >
-                  <ShieldCheck className="h-4 w-4 text-[#655B36]" />
-                  <div>
-                    <div>Administrator Persona</div>
-                    <div className="text-[10px] text-[#666861]">Clinic Operations Admin</div>
-                  </div>
-                </button>
+                  <div className="text-[10px] text-[#666861] uppercase font-semibold">{user.role}</div>
+                </div>
               </div>
-            )}
-          </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  await logout();
+                  router.push("/login");
+                }}
+                className="flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#E5E4DE] bg-white px-3 py-2 text-xs font-semibold text-[#b42318] hover:bg-[#F8ECE6] transition-colors"
+                aria-label="Sign Out"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Sign Out</span>
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-[#E5E4DE] bg-white px-3.5 py-2 text-xs font-semibold text-[#171815] hover:bg-[#F6F5F0] transition-colors"
+            >
+              <span>Sign In</span>
+            </Link>
+          )}
 
           {/* Quick Book / Action button */}
           {isPublicPage ? (
