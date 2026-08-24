@@ -137,7 +137,7 @@ these semantics:
 - `Hold`: common fields plus `patient_id`, `doctor_id`, `starts_at`, `ends_at`,
   `status` (`active|released|expired|converted`), and `expires_at`.
 - `AppointmentSummary`: common fields plus patient/doctor minimum display references,
-  interval, `status` (`scheduled|cancelled|completed`), and integration-status summary.
+  interval, `status` (`confirmed|in_progress|completed|cancelled_patient|cancelled_doctor|cancelled_admin|cancelled_doctor_leave`), and integration-status summary.
   Patient-facing lists do not expose internal notes; doctor lists contain only the
   symptom brief needed for the assigned appointment.
 - `AppointmentDetail`: summary fields plus authorized original symptoms, generated
@@ -183,7 +183,7 @@ schema component names and enums must be frozen in FastAPI before generating the
 | `POST /holds` | patient | **Idempotent.** Request `doctor_id`, `starts_at`, and `duration_minutes`; atomically create an active hold or return `SLOT_CONFLICT` (`BOOK-002`, `HOLD-001`). |
 | `GET /holds/{hold_id}` | owning patient | Return current server-derived state and `expires_at`. |
 | `DELETE /holds/{hold_id}` | owning patient | **Idempotent.** Release an active hold; returns `204` when the same release intent is replayed. |
-| `POST /holds/{hold_id}/confirm` | owning patient | **Idempotent.** Submit original `symptoms_text`; atomically convert the hold, create the scheduled appointment and outbox events, and return `201 AppointmentDetail` (`BOOK-004`, `TEXT-001`). |
+| `POST /holds/{hold_id}/confirm` | owning patient | **Idempotent.** Submit original `symptoms_text`; atomically convert the hold, create the confirmed appointment and outbox events, and return `201 AppointmentDetail` (`BOOK-004`, `TEXT-001`). |
 | `GET /appointments` | all | Cursor-list role-scoped appointments filtered by status and bounded date range. Patient sees own, doctor sees assigned, admin sees operational summaries without clinical text. |
 | `GET /appointments/{appointment_id}` | owning patient, assigned doctor, admin operational view | Return the role-appropriate appointment detail. Admin clinical fields remain excluded by default. |
 | `POST /appointments/{appointment_id}/cancel` | owning patient, assigned doctor, admin | **Idempotent, Versioned.** Cancel with an allowlisted reason code and optional safe note; emit outbox events. |
@@ -193,12 +193,12 @@ schema component names and enums must be frozen in FastAPI before generating the
 
 | Method and path | Roles | Contract |
 |---|---|---|
-| `GET /doctors/{doctor_id}/leave` | assigned doctor, admin | Cursor-list leave intervals. |
-| `POST /doctors/{doctor_id}/leave/preview` | assigned doctor, admin | Validate a proposed UTC interval/reason and return a short-lived `preview_token`, doctor schedule version, affected hold count, and affected appointment summaries. No mutation occurs. |
-| `POST /doctors/{doctor_id}/leave` | assigned doctor, admin | **Idempotent, Versioned.** Apply a preview token with an explicit resolution for every affected appointment (`LEAVE-002`, `LEAVE-003`). |
-| `POST /doctors/{doctor_id}/leave/{leave_id}/preview` | assigned doctor, admin | Preview a versioned edit or removal and its impact. |
-| `PATCH /doctors/{doctor_id}/leave/{leave_id}` | assigned doctor, admin | **Idempotent, Versioned.** Apply the matching preview and explicit resolutions. |
-| `DELETE /doctors/{doctor_id}/leave/{leave_id}` | assigned doctor, admin | **Idempotent, Versioned.** Remove leave using a matching preview token; no unrelated appointment state changes. |
+| `GET /doctors/{doctor_id}/leave` | assigned doctor, admin | Cursor-list leave intervals; only administrators mutate leave. |
+| `POST /doctors/{doctor_id}/leave/preview` | admin | Validate a proposed UTC interval/reason and return a short-lived `preview_token`, doctor schedule version, affected hold count, and affected appointment summaries. No mutation occurs. |
+| `POST /doctors/{doctor_id}/leave` | admin | **Idempotent, Versioned.** Apply a preview token; atomically invalidate affected holds, cancel every overlapping confirmed appointment as `cancelled_doctor_leave`, and enqueue required notifications/calendar cancellations (`LEAVE-002`, `LEAVE-003`). |
+| `POST /doctors/{doctor_id}/leave/{leave_id}/preview` | admin | Preview a versioned edit or removal and its impact. |
+| `PATCH /doctors/{doctor_id}/leave/{leave_id}` | admin | **Idempotent, Versioned.** Apply the matching preview and the same mandatory affected-appointment handling. |
+| `DELETE /doctors/{doctor_id}/leave/{leave_id}` | admin | **Idempotent, Versioned.** Remove leave using a matching preview token; no unrelated appointment state changes. |
 
 ### Symptoms, generated briefs, visits, and prescriptions
 
@@ -206,7 +206,7 @@ schema component names and enums must be frozen in FastAPI before generating the
 |---|---|---|
 | `GET /appointments/{appointment_id}/symptoms` | owning patient, assigned doctor | Return immutable original symptom versions plus separately labeled generated-brief status when authorized. |
 | `GET /appointments/{appointment_id}/visit` | owning patient after completion, assigned doctor | Return patient-safe completed view or doctor draft/detail view. Patient access follows publication/completion policy. |
-| `POST /appointments/{appointment_id}/visit` | assigned doctor | **Idempotent.** Open the one draft visit for a scheduled appointment; replay returns that visit. |
+| `POST /appointments/{appointment_id}/visit` | assigned doctor | **Idempotent.** Open the one draft visit for a confirmed or in-progress appointment; replay returns that visit. |
 | `PATCH /visits/{visit_id}` | assigned doctor | **Versioned.** Append a new original-note version and replace the draft structured prescription as one validated change; never overwrite prior source text. |
 | `POST /visits/{visit_id}/complete` | assigned doctor | **Idempotent, Versioned.** Validate and atomically finalize notes/prescription and complete the appointment (`VISIT-002`). External work continues asynchronously. |
 | `POST /visits/{visit_id}/amendments` | assigned doctor | **Idempotent, Versioned.** Append a reasoned correction to a completed visit; do not mutate historical content. |

@@ -25,7 +25,7 @@ Required evidence: synchronized concurrency trace, all 20 outcomes, active-appoi
 
 ### `AT-HOLD-001` — An expired hold cannot be confirmed
 
-Domain intent: `BOOK-003`, holds expire; `BOOK-004`, expired holds cannot be confirmed.
+Domain intent: `HOLD-001`, the server assigns hold expiry; `HOLD-002`, expired holds cannot be confirmed.
 
 Given a patient owns a valid hold, when controlled time advances beyond its expiry and that patient attempts confirmation, then confirmation is rejected with the stable expired-hold outcome, no appointment or booking outbox work is committed, and the interval can be offered for a new hold subject to current schedule and leave rules.
 
@@ -41,7 +41,7 @@ Required evidence: redacted rejection for patient B, unchanged hold ownership/st
 
 ### `AT-BOOK-002` — External failures do not reverse a booking
 
-Domain intent: `BOOK-005`, calendar, email, and LLM failures cannot roll back a committed appointment.
+Domain intent: `OUTBOX-001` and `OUTBOX-003`, external projection failures cannot roll back a committed appointment.
 
 Given a valid booking while all external adapters are configured to fail, when the booking transaction completes, then the appointment remains committed and visible with integration work represented separately as pending, retrying, failed, or unavailable. No provider error changes the appointment to failed or deletes it.
 
@@ -51,7 +51,7 @@ Required evidence: committed appointment, atomic initial outbox state, adapter f
 
 ### `AT-LEAVE-001` — Leave blocks availability
 
-Domain intent: `LEAVE-001`, doctor leave blocks slot generation for the affected period.
+Domain intent: `BOOK-003` and `LEAVE-001`, doctor leave blocks slot generation for the affected period.
 
 Given a doctor has working hours and approved leave overlapping part or all of those hours, when availability is requested, then no slot overlapping the leave is offered or holdable while unaffected working time remains governed by the normal availability rules.
 
@@ -59,9 +59,9 @@ Required evidence: working hours, leave interval, returned availability, and a r
 
 ### `AT-LEAVE-002` — Leave cancellation and notifications commit together
 
-Domain intent: `LEAVE-002`, affected appointments become `CANCELLED_DOCTOR_LEAVE`; `LEAVE-003`, each affected appointment produces notification work.
+Domain intent: `LEAVE-002`, the impact is previewed; `LEAVE-003`, every affected confirmed appointment becomes `cancelled_doctor_leave` and produces durable notification/calendar work.
 
-Given a doctor has multiple confirmed appointments inside a proposed leave period plus appointments outside it, when an administrator confirms the leave, then every and only overlapping active appointment transitions to `CANCELLED_DOCTOR_LEAVE`. In the same transaction, each affected appointment receives the required durable follow-up work for patient notification and calendar cancellation; outside appointments remain unchanged.
+Given a doctor has multiple confirmed appointments inside a proposed leave period plus appointments outside it, when an administrator confirms the leave, then every and only overlapping active appointment transitions to `cancelled_doctor_leave`. In the same transaction, each affected appointment receives the required durable follow-up work for patient notification and calendar cancellation; outside appointments remain unchanged.
 
 If the transaction is forced to fail before commit, then neither the leave, cancellations, nor outbox work is visible. If an external notification later fails, the leave and cancellations remain committed and the integration follows its retry policy.
 
@@ -133,7 +133,7 @@ Required evidence: direct-object and collection-filter attempts, response-body i
 
 ### `AT-RX-001` — Reminder timing comes only from structured fields
 
-Domain intent: `RX-001`, medication schedules are derived deterministically from structured prescription data, never generated prose.
+Domain intent: `RX-001` defines the structured prescription; `RX-002` derives medication schedules from those fields, never generated prose.
 
 Given a prescription with explicit medication, dosage, frequency, start, duration, and instructions plus generated or free-text prose that conflicts with the structured frequency, when reminders are scheduled, then reminder count and timing follow only the structured fields. Changing only generated prose does not alter the schedule; changing an authorized structured field produces the corresponding deterministic schedule update without duplicate active reminders.
 

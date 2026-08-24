@@ -153,7 +153,7 @@ Optimistic updates are permitted only for reversible, low-risk preferences. Book
 
 ## Status language
 
-- Appointment status uses an explicit label such as Held, Confirmed, In progress, Completed, Cancelled, or Cancelled—doctor leave.
+- Appointment status uses an explicit label such as Held, Confirmed, In progress, Completed, Cancelled by patient, Cancelled by doctor, Cancelled by admin, or Cancelled—doctor leave.
 - Integration status is separate from appointment status: Pending, Synced/Sent, Retrying, or Failed.
 - AI summaries use Pending, Ready, or Unavailable. “Unavailable” must reveal the preserved original symptoms or notes rather than block the task.
 - Urgency uses text and, where useful, an icon in addition to color. Generated urgency is informational and must be labeled as AI-assisted.

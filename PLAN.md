@@ -2,7 +2,7 @@
 
 ## Objective
 
-Build a reliable healthcare appointment and follow-up platform with separate patient, doctor, and administrator experiences. The frontend will be designed and implemented later in Gemini Antigravity; backend implementation will be coordinated here with bounded workers.
+Build a reliable healthcare appointment and follow-up platform with separate patient, doctor, and administrator experiences. The frontend will be designed and implemented later in Gemini Antigravity. Backend implementation will be coordinated by the sole GPT-5.6 Sol/medium supervisor through separate GPT-5.6 Luna/max Codex worker tasks.
 
 ## Agreed stack
 
@@ -18,7 +18,7 @@ Build a reliable healthcare appointment and follow-up platform with separate pat
 
 | Area | Owner during implementation | Purpose |
 |---|---|---|
-| `apps/web/**` | Gemini Antigravity frontend worker | Patient, doctor, and admin UI |
+| `apps/web/**` | Gemini Antigravity frontend environment | Patient, doctor, and admin UI |
 | `apps/api/**` | Backend specialists | HTTP API, RBAC, booking and clinical workflows |
 | `apps/worker/**` | Integration specialist | Outbox processing, email, calendar, LLM, reminders |
 | `packages/api-client/**` | Integration owner | Generated OpenAPI client; generated files are not hand-edited |

@@ -2,10 +2,15 @@
 
 ## Operating Model
 
-- Use one supervisor agent to coordinate the workflow, enforce boundaries, verify evidence, and communicate with the user.
-- Use bounded worker agents for independent audits, fixes, integration, review corrections, builds, installations, and releases.
-- Only the supervisor may create, continue, stop, archive, or replace workers.
-- Workers must complete their assigned work themselves and must not create or delegate to sub-agents.
+- Use one sole supervisor Codex task to coordinate the workflow, enforce boundaries, verify evidence, and communicate with the user.
+- The supervisor runs GPT-5.6 Sol at medium reasoning.
+- A worker is a separate, user-visible Codex task/thread created for a bounded assignment. Workers are not collaboration sub-agents.
+- Every Codex worker task runs GPT-5.6 Luna at max reasoning. Do not use another model or reasoning level for a worker.
+- The supervisor creates workers with the Codex thread/task tools, then reads and monitors those tasks with the thread coordination tools.
+- Do not use collaboration sub-agents as project workers. Sub-agents are outside this project's operating model.
+- Gemini Antigravity is the dedicated frontend implementation environment, not a Codex worker task.
+- Only the supervisor may create, continue, stop, archive, or replace worker tasks.
+- Workers must complete their assigned work themselves and must not create tasks, threads, or sub-agents or delegate further.
 - Treat audit, implementation, pull request, merge, build, installation, and release as separate authorization boundaries.
 
 ## Project Discovery
@@ -37,9 +42,9 @@ The supervisor owns:
 
 The supervisor must independently verify worker claims. Worker reports are evidence, not automatic approval.
 
-## Worker Contract
+## Worker Task Contract
 
-Every worker prompt must define:
+Every worker task brief must define:
 
 - Exact base commit.
 - Assigned subsystem or issue.
@@ -70,7 +75,7 @@ Final reports must include:
 - Residual risk.
 - Any blocker or unverified assumption.
 
-## Parallel Work
+## Parallel Worker Tasks
 
 - Use separate worktrees for parallel workers.
 - Root every worktree at the same exact canonical commit.
@@ -284,11 +289,12 @@ After installation, verify:
 - Safe launch and health.
 - Preservation of user data.
 
-## Elastic Monitoring
+## Elastic Task Monitoring
 
 Use a single bounded status snapshot per monitoring wake.
 
-- Pass each nonterminal worker’s latest preserved cursor.
+- Monitor workers through the Codex task/thread tools, not collaboration sub-agent tools.
+- Pass each nonterminal worker task’s latest preserved cursor.
 - Preserve every returned cursor for the next wake.
 - Do not repeatedly read active workers.
 - Do not wake merely because a worker posted commentary.
@@ -310,11 +316,11 @@ Recommended elastic cadence:
 
 Update the schedule whenever the workflow changes phase.
 
-## Worker Lifecycle
+## Worker Task Lifecycle
 
-- Archive workers after their output has been independently verified.
-- Archive accidental, duplicate, stopped, completed, and obsolete workers.
-- Do not keep completed workers active “just in case.”
+- Archive worker tasks after their output has been independently verified.
+- Archive accidental, duplicate, stopped, completed, and obsolete worker tasks.
+- Do not keep completed worker tasks active “just in case.”
 - Reuse an existing specialist only when a correction belongs to its original scope.
 - Do not restart terminal workers without a concrete, newly authorized correction.
 - Preserve commits, reports, logs, and required evidence before archival.
@@ -343,4 +349,3 @@ Do not narrate unchanged monitoring snapshots. Do not claim success from worker 
 ## Commit Attribution
 
 Follow the repository’s existing commit-attribution policy. Do not invent, replace, or alter author identity unless the project explicitly requires it.
-

@@ -27,10 +27,10 @@ Redis, a worker queue, an in-memory availability calculation, and a calendar pro
 may accelerate or project state but may not decide whether an interval is free.
 
 **BOOK-002 — Effective overlap.** For the same doctor, a non-expired `active` hold or an
-appointment in `scheduled` or `completed` state conflicts with every interval for which
+appointment in `confirmed` or `in_progress` state conflicts with every interval for which
 `candidate.starts_at < existing.ends_at` and
-`candidate.ends_at > existing.starts_at`. `cancelled` appointments and `expired`,
-`released`, or `converted` holds do not conflict. The database must enforce this rule
+`candidate.ends_at > existing.starts_at`. Appointments in any `cancelled_*` status and
+`expired`, `released`, or `converted` holds do not conflict. The database must enforce this rule
 under concurrent writes; a read-before-write availability check alone is insufficient.
 
 **BOOK-003 — Schedule validation.** A hold may be created only when the entire requested
@@ -43,11 +43,13 @@ appointment, marks the hold `converted`, records the booking idempotency result,
 creates required outbox events in one database transaction. A failed transaction makes
 none of those changes visible.
 
-**BOOK-005 — State transitions.** An appointment begins as `scheduled`. Allowed terminal
-transitions are `scheduled -> cancelled` and `scheduled -> completed`. Rescheduling is
-an atomic replacement that locks the original appointment, validates the new interval,
+**BOOK-005 — State transitions.** An appointment begins as `confirmed`. The ordinary
+clinical path is `confirmed -> in_progress -> completed`. A confirmed appointment may
+instead transition to `cancelled_patient`, `cancelled_doctor`, `cancelled_admin`, or
+`cancelled_doctor_leave` according to the authorized command and reason. Rescheduling
+is an atomic change that locks the original appointment, validates the new interval,
 updates it, and emits one reschedule event; the previous interval is retained in audit
-data. Terminal appointments cannot be rescheduled or transitioned again.
+data. Completed or cancelled appointments cannot be rescheduled or transitioned again.
 
 **BOOK-006 — Availability is advisory.** Availability responses are snapshots and do
 not reserve a slot. Clients must handle a confirmation conflict by refreshing
@@ -91,15 +93,16 @@ working hours are recurring local wall-clock intervals in the doctor's IANA time
 leave is stored as concrete UTC instants after resolving local date/time input.
 
 **LEAVE-002 — Impact preview.** Creating or changing leave first requires a server-side
-impact preview listing affected active holds and scheduled appointments. Applying leave
+impact preview listing affected active holds and confirmed appointments. Applying leave
 requires the preview token and expected doctor schedule version; an expired or stale
 preview returns a conflict and must be regenerated.
 
-**LEAVE-003 — Explicit resolution.** Leave application invalidates overlapping active
-holds atomically. It never silently cancels scheduled appointments. The request must
-choose an explicit resolution for each affected appointment: cancel with a reason, or
-leave scheduled with an acknowledged exception. The result and actor are audited, and
-notifications are emitted through the outbox.
+**LEAVE-003 — Atomic cancellation and notification.** Applying leave invalidates
+overlapping active holds and transitions every overlapping `confirmed` appointment to
+`cancelled_doctor_leave` in the same transaction. Each affected appointment creates
+durable patient-notification and calendar-cancellation work in the transactional
+outbox. No affected appointment may remain confirmed as an exception. The result and
+actor are audited.
 
 ## Outbox and integrations
 
@@ -144,9 +147,9 @@ content is never silently treated as doctor-authored content.
 
 **VISIT-001 — Visit ownership.** A visit belongs to exactly one appointment and can be
 created or edited only by the assigned doctor (or an administrator performing an
-explicitly audited support action). Only a scheduled appointment can be opened for a
-visit; completion atomically finalizes notes/prescriptions and transitions the
-appointment to `completed`.
+explicitly audited support action). Only a `confirmed` or `in_progress` appointment can
+be opened for a visit; completion atomically finalizes notes/prescriptions and
+transitions the appointment to `completed`.
 
 **VISIT-002 — Completion validation.** Completion requires the latest visit version and
 valid structured prescription entries. A completed visit is immutable; corrections are

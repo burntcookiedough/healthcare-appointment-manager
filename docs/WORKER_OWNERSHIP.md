@@ -1,8 +1,10 @@
-# Worker ownership
+# Worker task ownership
 
-All implementation workers start from the same canonical commit in separate Git worktrees. They return one bounded commit and never merge their own work.
+The sole supervisor is a GPT-5.6 Sol task at medium reasoning. Every worker is a separate, user-visible Codex task/thread running GPT-5.6 Luna at max reasoning. Collaboration sub-agents are not workers and are not used for project work. All implementation worker tasks start from the same canonical commit in separate Git worktrees. They return one bounded commit and never merge their own work.
 
-## Planned specialists
+Gemini Antigravity remains the dedicated frontend implementation environment and is not classified as a Codex worker task.
+
+## Planned worker tasks and external frontend work
 
 | Worker | Owns | Explicitly excludes |
 |---|---|---|
