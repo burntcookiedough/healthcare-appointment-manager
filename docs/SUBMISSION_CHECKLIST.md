@@ -84,6 +84,7 @@ tar -tf healthcare-appointment-manager-source.zip
 
 Because `git archive` includes committed files only, it excludes Git metadata,
 ignored dependencies/caches/worktrees, local `.env` files, and untracked outputs.
-Before sharing, inspect `git archive --list HEAD` and verify that the only tracked
-environment file is `.env.example` with placeholders. Do not add the generated zip to
-the repository.
+Before sharing, inspect the archive with `tar -tf healthcare-appointment-manager-source.zip`
+or `unzip -l healthcare-appointment-manager-source.zip`, then verify that the only
+tracked environment file is `.env.example` with placeholders. Do not add the generated
+zip to the repository.
