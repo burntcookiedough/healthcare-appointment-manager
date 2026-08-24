@@ -116,8 +116,14 @@ def test_api_llm_event_task_kinds_match_worker_contract() -> None:
             source_record_reference=uuid4(), source_version=1, task_kind=task_kind
         )
         assert request.task_kind == task_kind
-    with pytest.raises(ValueError):
-        ClinicalSummaryRequest(task_kind="pre_visit_brief")
+    for legacy_task_kind, canonical_task_kind in (
+        ("pre_visit_brief", "pre_visit"),
+        ("post_visit_summary", "post_visit"),
+    ):
+        request = ClinicalSummaryRequest.model_validate({"task_kind": legacy_task_kind})
+        assert request.task_kind == canonical_task_kind
+    with pytest.raises(ValidationError):
+        ClinicalSummaryRequest.model_validate({"task_kind": "unsupported_summary"})
 
 
 def test_api_runtime_image_has_import_migration_and_health_support() -> None:
