@@ -86,7 +86,7 @@ export function Navbar() {
                     key={link.href}
                     href={link.href}
                     className={cn(
-                      "rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors duration-150",
+                      "inline-flex min-h-[44px] items-center rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors duration-150",
                       isActive
                         ? "bg-[#111111] text-white"
                         : "text-[#626262] hover:bg-[#f0f0eb] hover:text-[#111111]"
@@ -218,7 +218,7 @@ export function Navbar() {
               href={link.href}
               onClick={() => setIsMobileMenuOpen(false)}
               className={cn(
-                "block rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
+                "flex min-h-[44px] items-center rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-150",
                 pathname === link.href
                   ? "bg-[#111111] text-white"
                   : "text-[#626262] hover:bg-[#f0f0eb] hover:text-[#111111]"

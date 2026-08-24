@@ -99,12 +99,12 @@ export default function DoctorAppointmentWorkspacePage() {
 
           <div className="flex items-center gap-2.5">
             {appointment.visit_id ? (
-              <Link href={`/doctor/visits/${appointment.visit_id}`}>
-                <Button variant="primary" size="default">
+              <Button asChild variant="primary" size="default">
+                <Link href={`/doctor/visits/${appointment.visit_id}`}>
                   <FileText className="h-4 w-4 text-[#efff72]" />
                   <span>Resume Consultation Notes</span>
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             ) : (
               <Button
                 variant="primary"

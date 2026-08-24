@@ -56,19 +56,19 @@ export default function DoctorTimelinePage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 shadow-xs">
           <span className="text-xs font-semibold text-[#8e8e89] block">Total Queue Today</span>
-          <span className="text-2xl font-black text-[#111111]">{isLoading ? "..." : todayAppointments.length}</span>
+          <span className="text-2xl font-black text-[#111111]">{isLoading ? "…" : todayAppointments.length}</span>
         </div>
         <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 shadow-xs">
           <span className="text-xs font-semibold text-[#26734d] block">Confirmed Upcoming</span>
-          <span className="text-2xl font-black text-[#111111]">{isLoading ? "..." : confirmedCount}</span>
+          <span className="text-2xl font-black text-[#111111]">{isLoading ? "…" : confirmedCount}</span>
         </div>
         <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 shadow-xs">
           <span className="text-xs font-semibold text-[#9a6700] block">In Consultation</span>
-          <span className="text-2xl font-black text-[#111111]">{isLoading ? "..." : inProgressCount}</span>
+          <span className="text-2xl font-black text-[#111111]">{isLoading ? "…" : inProgressCount}</span>
         </div>
         <div className="rounded-2xl border border-[#e7e7e2] bg-white p-5 shadow-xs">
           <span className="text-xs font-semibold text-[#626262] block">Completed Visits</span>
-          <span className="text-2xl font-black text-[#111111]">{isLoading ? "..." : completedCount}</span>
+          <span className="text-2xl font-black text-[#111111]">{isLoading ? "…" : completedCount}</span>
         </div>
       </div>
 
@@ -135,12 +135,12 @@ export default function DoctorTimelinePage() {
                     <AiBadge status="ready" label="Intake Brief" />
                   </div>
 
-                  <Link href={`/doctor/appointments/${apt.id}`}>
-                    <Button variant="primary" size="default" className="text-xs">
+                  <Button asChild variant="primary" size="default" className="text-xs">
+                    <Link href={`/doctor/appointments/${apt.id}`}>
                       <span>Open Workspace</span>
                       <ArrowRight className="h-3.5 w-3.5 text-[#efff72]" />
-                    </Button>
-                  </Link>
+                    </Link>
+                  </Button>
                 </div>
               </div>
             ))}

@@ -63,12 +63,12 @@ export default function PatientAppointmentsPage() {
           </p>
         </div>
 
-        <Link href="/patient/book">
-          <Button variant="primary" size="default">
+        <Button asChild variant="primary" size="default">
+          <Link href="/patient/book">
             <PlusCircle className="h-4 w-4 text-[#efff72]" />
             <span>Book New Appointment</span>
-          </Button>
-        </Link>
+          </Link>
+        </Button>
       </div>
 
       {/* Tabs */}
@@ -144,20 +144,20 @@ export default function PatientAppointmentsPage() {
 
               <div className="flex items-center gap-2.5 sm:self-center">
                 {apt.visit_id && (
-                  <Link href={`/patient/visits/${apt.visit_id}`}>
-                    <Button variant="outline" size="sm" className="text-xs">
+                  <Button asChild variant="outline" size="sm" className="text-xs">
+                    <Link href={`/patient/visits/${apt.visit_id}`}>
                       <FileText className="h-3.5 w-3.5 text-[#26734d]" />
                       <span>Visit Notes</span>
-                    </Button>
-                  </Link>
+                    </Link>
+                  </Button>
                 )}
 
-                <Link href={`/patient/appointments/${apt.id}`}>
-                  <Button variant="primary" size="sm" className="text-xs">
+                <Button asChild variant="primary" size="sm" className="text-xs">
+                  <Link href={`/patient/appointments/${apt.id}`}>
                     <span>Manage Details</span>
                     <ArrowRight className="h-3 w-3 text-[#efff72]" />
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               </div>
             </div>
           ))}

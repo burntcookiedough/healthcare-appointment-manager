@@ -515,16 +515,16 @@ function BookingWizardContent() {
 
           {/* Action Links */}
           <div className="flex flex-wrap items-center justify-center gap-3 pt-4">
-            <Link href={`/patient/appointments/${confirmedAppointment.id}`}>
-              <Button variant="primary" size="default">
+            <Button asChild variant="primary" size="default">
+              <Link href={`/patient/appointments/${confirmedAppointment.id}`}>
                 <span>View Appointment Detail</span>
-              </Button>
-            </Link>
-            <Link href="/patient">
-              <Button variant="outline" size="default">
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="default">
+              <Link href="/patient">
                 <span>Return to Dashboard</span>
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         </div>
       )}

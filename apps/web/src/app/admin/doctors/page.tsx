@@ -131,11 +131,11 @@ export default function AdminDoctorsPage() {
                       </span>
                     </td>
                     <td className="py-4 px-6 text-right">
-                      <Link href={`/patient/doctors/${doc.id}`}>
-                        <Button variant="outline" size="sm" className="text-xs">
+                      <Button asChild variant="outline" size="sm" className="text-xs">
+                        <Link href={`/patient/doctors/${doc.id}`}>
                           <span>View Public Profile</span>
-                        </Button>
-                      </Link>
+                        </Link>
+                      </Button>
                     </td>
                   </tr>
                 ))}

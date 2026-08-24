@@ -64,18 +64,18 @@ export default function LandingPage() {
 
             {/* CTA Buttons */}
             <div className="flex flex-wrap items-center gap-3 pt-2">
-              <Link href="/patient/book">
-                <Button variant="primary" size="lg" className="px-6 text-sm font-semibold">
+              <Button asChild variant="primary" size="lg" className="px-6 text-sm font-semibold">
+                <Link href="/patient/book">
                   <span>Book an Appointment</span>
                   <ArrowRight className="h-4 w-4 text-[#efff72]" />
-                </Button>
-              </Link>
+                </Link>
+              </Button>
 
-              <Link href="/login">
-                <Button variant="outline" size="lg" className="px-6 text-sm font-semibold">
+              <Button asChild variant="outline" size="lg" className="px-6 text-sm font-semibold">
+                <Link href="/login">
                   <span>Explore Demo Roles</span>
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             </div>
 
             {/* Key Trust Signals */}

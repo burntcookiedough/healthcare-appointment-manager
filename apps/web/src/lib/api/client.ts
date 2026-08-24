@@ -154,16 +154,8 @@ export const apiClient = {
     startsAt: string,
     endsAt: string,
     reason: string,
-    reqOrToken: LeaveApplyRequest | string,
-    expectedScheduleVersion?: number
+    req: LeaveApplyRequest
   ): Promise<DoctorLeave> => {
-    const req: LeaveApplyRequest =
-      typeof reqOrToken === "string"
-        ? {
-            preview_token: reqOrToken,
-            expected_schedule_version: expectedScheduleVersion ?? 1,
-          }
-        : reqOrToken;
     return mockDb.applyDoctorLeave(doctorId, startsAt, endsAt, reason, req);
   },
 

@@ -144,17 +144,17 @@ export default function DoctorDiscoveryPage() {
 
               {/* Action Buttons */}
               <div className="flex items-center gap-2 pt-2 border-t border-[#f0f0eb]">
-                <Link href={`/patient/doctors/${doc.id}`} className="flex-1">
-                  <Button variant="outline" className="w-full text-xs">
+                <Button asChild variant="outline" className="flex-1 text-xs">
+                  <Link href={`/patient/doctors/${doc.id}`}>
                     <span>View Profile</span>
-                  </Button>
-                </Link>
-                <Link href={`/patient/book?doctor_id=${doc.id}`} className="flex-1">
-                  <Button variant="primary" className="w-full text-xs">
+                  </Link>
+                </Button>
+                <Button asChild variant="primary" className="flex-1 text-xs">
+                  <Link href={`/patient/book?doctor_id=${doc.id}`}>
                     <span>Book Slot</span>
                     <ArrowRight className="h-3.5 w-3.5 text-[#efff72]" />
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               </div>
             </div>
           ))}

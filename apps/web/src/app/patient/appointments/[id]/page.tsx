@@ -249,12 +249,12 @@ export default function PatientAppointmentDetailPage() {
                 Consultation notes and digital prescriptions have been recorded by the doctor.
               </p>
             </div>
-            <Link href={`/patient/visits/${appointment.visit_id}`}>
-              <Button variant="primary" size="sm">
+            <Button asChild variant="primary" size="sm">
+              <Link href={`/patient/visits/${appointment.visit_id}`}>
                 <FileText className="h-4 w-4 text-[#efff72]" />
                 <span>View Summary</span>
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         )}
       </div>

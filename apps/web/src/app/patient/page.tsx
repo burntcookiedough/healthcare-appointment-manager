@@ -89,7 +89,7 @@ export default function PatientDashboard() {
           </h2>
           <Link
             href="/patient/appointments"
-            className="text-xs font-semibold text-[#626262] hover:text-[#111111] flex items-center gap-1"
+            className="inline-flex min-h-[44px] items-center gap-1 px-3 py-2 text-xs font-semibold text-[#626262] hover:text-[#111111] transition-colors rounded-xl"
           >
             <span>View All</span>
             <ArrowRight className="h-3 w-3" />
@@ -119,17 +119,17 @@ export default function PatientDashboard() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <Link href={`/patient/appointments/${upcomingAppointment.id}`}>
-                  <Button variant="outline" size="default">
+                <Button asChild variant="outline" size="default">
+                  <Link href={`/patient/appointments/${upcomingAppointment.id}`}>
                     <span>Manage / Reschedule</span>
-                  </Button>
-                </Link>
-                <Link href={`/patient/appointments/${upcomingAppointment.id}`}>
-                  <Button variant="primary" size="default">
+                  </Link>
+                </Button>
+                <Button asChild variant="primary" size="default">
+                  <Link href={`/patient/appointments/${upcomingAppointment.id}`}>
                     <span>View Clinical Details</span>
                     <ArrowRight className="h-4 w-4 text-[#efff72]" />
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               </div>
             </div>
 
@@ -187,7 +187,7 @@ export default function PatientDashboard() {
             </h2>
             <Link
               href="/patient/prescriptions"
-              className="text-xs font-semibold text-[#626262] hover:text-[#111111] flex items-center gap-1"
+              className="inline-flex min-h-[44px] items-center gap-1 px-3 py-2 text-xs font-semibold text-[#626262] hover:text-[#111111] transition-colors rounded-xl"
             >
               <span>Prescription Details</span>
               <ArrowRight className="h-3 w-3" />
@@ -268,7 +268,7 @@ export default function PatientDashboard() {
             </h2>
             <Link
               href="/patient/appointments"
-              className="text-xs font-semibold text-[#626262] hover:text-[#111111]"
+              className="inline-flex min-h-[44px] items-center gap-1 px-3 py-2 text-xs font-semibold text-[#626262] hover:text-[#111111] transition-colors rounded-xl"
             >
               History
             </Link>
@@ -293,7 +293,7 @@ export default function PatientDashboard() {
                   {past.visit_id && (
                     <Link
                       href={`/patient/visits/${past.visit_id}`}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-[#111111] hover:underline"
+                      className="inline-flex min-h-[44px] items-center gap-1.5 px-2 py-1 text-xs font-bold text-[#111111] hover:underline"
                     >
                       <FileText className="h-3.5 w-3.5 text-[#26734d]" />
                       <span>View Doctor Notes & Prescription</span>
@@ -308,12 +308,12 @@ export default function PatientDashboard() {
             )}
 
             <div className="pt-2">
-              <Link href="/patient/doctors" className="block w-full">
-                <Button variant="accent" className="w-full justify-between">
+              <Button asChild variant="accent" className="w-full justify-between">
+                <Link href="/patient/doctors">
                   <span>Browse Specialist Directory</span>
                   <ArrowRight className="h-4 w-4 text-[#111111]" />
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             </div>
           </div>
         </section>

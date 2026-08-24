@@ -5,6 +5,8 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 
+import { Slot } from "@radix-ui/react-slot";
+
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-45 select-none",
   {
@@ -49,16 +51,18 @@ const buttonVariants = cva(
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
+  asChild?: boolean;
   isLoading?: boolean;
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, isLoading, children, disabled, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, isLoading, children, disabled, ...props }, ref) => {
+    const Comp = asChild ? Slot : "button";
     return (
-      <button
+      <Comp
         ref={ref}
         className={cn(buttonVariants({ variant, size, className }))}
-        disabled={disabled || isLoading}
+        disabled={asChild ? undefined : (disabled || isLoading)}
         {...props}
       >
         {isLoading ? (
@@ -69,9 +73,11 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ) : (
           children
         )}
-      </button>
+      </Comp>
     );
   }
 );
 
 Button.displayName = "Button";
+
+export { buttonVariants };

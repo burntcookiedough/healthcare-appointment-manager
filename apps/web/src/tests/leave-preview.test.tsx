@@ -1,5 +1,53 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { apiClient } from "@/lib/api/client";
+import { DoctorLeave, AppointmentDetail, AdminIntegrationItem } from "@/types/api";
+
+interface StateSnapshot {
+  doctorScheduleVersion: number;
+  leaves: DoctorLeave[];
+  appointments: AppointmentDetail[];
+  integrations: AdminIntegrationItem[];
+  holdStatus?: string;
+}
+
+async function captureObservableSnapshot(
+  doctorId: string,
+  appointmentIds: string[] = ["apt-001-upcoming", "apt-002-today-doctor"],
+  holdId?: string
+): Promise<StateSnapshot> {
+  const doc = await apiClient.getDoctorDetail(doctorId);
+  const leaves = await apiClient.getDoctorLeaves(doctorId);
+  const appointments = await Promise.all(
+    appointmentIds.map((id) => apiClient.getAppointmentDetail(id))
+  );
+  const integrations = await apiClient.getAdminIntegrations();
+  let holdStatus: string | undefined = undefined;
+  if (holdId) {
+    try {
+      const hold = await apiClient.getHold(holdId);
+      holdStatus = hold.status;
+    } catch {
+      holdStatus = undefined;
+    }
+  }
+  return {
+    doctorScheduleVersion: doc.schedule_version,
+    leaves,
+    appointments,
+    integrations,
+    holdStatus,
+  };
+}
+
+function assertZeroMutation(before: StateSnapshot, after: StateSnapshot) {
+  expect(after.doctorScheduleVersion).toBe(before.doctorScheduleVersion);
+  expect(after.leaves).toEqual(before.leaves);
+  expect(after.appointments).toEqual(before.appointments);
+  expect(after.integrations).toEqual(before.integrations);
+  if (before.holdStatus !== undefined) {
+    expect(after.holdStatus).toBe(before.holdStatus);
+  }
+}
 
 describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBOX-001..003, DATA-001)", () => {
   beforeEach(() => {
@@ -126,8 +174,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
   });
 
   it("rejects application with missing or nonexistent preview token with status 409 LEAVE_PREVIEW_STALE and zero mutation", async () => {
-    const leavesBefore = await apiClient.getDoctorLeaves("doc-001-rajesh");
-    const docBefore = await apiClient.getDoctorDetail("doc-001-rajesh");
+    const beforeSnapshot = await captureObservableSnapshot("doc-001-rajesh");
 
     let err: { status?: number; error?: { code?: string } } | null = null;
     try {
@@ -149,11 +196,9 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
     expect(err?.status).toBe(409);
     expect(err?.error?.code).toBe("LEAVE_PREVIEW_STALE");
 
-    // Zero mutation check
-    const leavesAfter = await apiClient.getDoctorLeaves("doc-001-rajesh");
-    const docAfter = await apiClient.getDoctorDetail("doc-001-rajesh");
-    expect(leavesAfter.length).toBe(leavesBefore.length);
-    expect(docAfter.schedule_version).toBe(docBefore.schedule_version);
+    // Zero mutation check across schedule version, leaves, appointments, integrations
+    const afterSnapshot = await captureObservableSnapshot("doc-001-rajesh");
+    assertZeroMutation(beforeSnapshot, afterSnapshot);
   });
 
   it("rejects reused preview token with status 409 LEAVE_PREVIEW_STALE and zero subsequent mutation", async () => {
@@ -179,8 +224,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
       }
     );
 
-    const leavesAfterFirst = await apiClient.getDoctorLeaves("doc-001-rajesh");
-    const docAfterFirst = await apiClient.getDoctorDetail("doc-001-rajesh");
+    const snapshotAfterFirst = await captureObservableSnapshot("doc-001-rajesh");
 
     // 2nd application with same token must fail
     let replayErr: { status?: number; error?: { code?: string } } | null = null;
@@ -203,16 +247,21 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
     expect(replayErr?.status).toBe(409);
     expect(replayErr?.error?.code).toBe("LEAVE_PREVIEW_STALE");
 
-    // Zero mutation check
-    const leavesAfterSecond = await apiClient.getDoctorLeaves("doc-001-rajesh");
-    const docAfterSecond = await apiClient.getDoctorDetail("doc-001-rajesh");
-    expect(leavesAfterSecond.length).toBe(leavesAfterFirst.length);
-    expect(docAfterSecond.schedule_version).toBe(docAfterFirst.schedule_version);
+    // Zero mutation check after rejected second application
+    const snapshotAfterSecond = await captureObservableSnapshot("doc-001-rajesh");
+    assertZeroMutation(snapshotAfterFirst, snapshotAfterSecond);
   });
 
-  it("rejects expired preview token after 15 minutes TTL using controlled Date.now spy", async () => {
+  it("rejects expired preview token after 15 minutes TTL using controlled Date.now spy with zero mutation", async () => {
     const realNow = Date.now();
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(realNow);
+
+    // Create a hold to test hold status remains active upon rejection
+    const hold = await apiClient.createHold({
+      doctor_id: "doc-001-rajesh",
+      starts_at: new Date(realNow + 50 * 3600 * 1000).toISOString(),
+      duration_minutes: 30,
+    });
 
     const startsAt = new Date(realNow + 48 * 3600 * 1000).toISOString();
     const endsAt = new Date(realNow + 72 * 3600 * 1000).toISOString();
@@ -226,6 +275,12 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
 
     // Advance mock Date.now by 16 minutes (beyond 15-minute TTL)
     nowSpy.mockReturnValue(realNow + 16 * 60 * 1000);
+
+    const beforeSnapshot = await captureObservableSnapshot(
+      "doc-001-rajesh",
+      ["apt-001-upcoming", "apt-002-today-doctor"],
+      hold.id
+    );
 
     let expiredErr: { status?: number; error?: { code?: string } } | null = null;
     try {
@@ -247,6 +302,13 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
     expect(expiredErr?.status).toBe(409);
     expect(expiredErr?.error?.code).toBe("LEAVE_PREVIEW_STALE");
 
+    const afterSnapshot = await captureObservableSnapshot(
+      "doc-001-rajesh",
+      ["apt-001-upcoming", "apt-002-today-doctor"],
+      hold.id
+    );
+    assertZeroMutation(beforeSnapshot, afterSnapshot);
+
     nowSpy.mockRestore();
   });
 
@@ -256,6 +318,9 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
       ends_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
       reason: "Research workshop",
     });
+
+    const beforeDoc1 = await captureObservableSnapshot("doc-001-rajesh");
+    const beforeDoc2 = await captureObservableSnapshot("doc-002-ananya");
 
     let err: { status?: number; error?: { code?: string } } | null = null;
     try {
@@ -276,6 +341,11 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
     expect(err).toBeDefined();
     expect(err?.status).toBe(409);
     expect(err?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+
+    const afterDoc1 = await captureObservableSnapshot("doc-001-rajesh");
+    const afterDoc2 = await captureObservableSnapshot("doc-002-ananya");
+    assertZeroMutation(beforeDoc1, afterDoc1);
+    assertZeroMutation(beforeDoc2, afterDoc2);
   });
 
   it("rejects mismatched start time with LEAVE_PREVIEW_STALE and zero mutation", async () => {
@@ -284,6 +354,8 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
       ends_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
       reason: "Research workshop",
     });
+
+    const beforeSnapshot = await captureObservableSnapshot("doc-001-rajesh");
 
     let err: { status?: number; error?: { code?: string } } | null = null;
     try {
@@ -304,6 +376,9 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
     expect(err).toBeDefined();
     expect(err?.status).toBe(409);
     expect(err?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+
+    const afterSnapshot = await captureObservableSnapshot("doc-001-rajesh");
+    assertZeroMutation(beforeSnapshot, afterSnapshot);
   });
 
   it("rejects mismatched end time with LEAVE_PREVIEW_STALE and zero mutation", async () => {
@@ -312,6 +387,8 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
       ends_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
       reason: "Research workshop",
     });
+
+    const beforeSnapshot = await captureObservableSnapshot("doc-001-rajesh");
 
     let err: { status?: number; error?: { code?: string } } | null = null;
     try {
@@ -332,6 +409,9 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
     expect(err).toBeDefined();
     expect(err?.status).toBe(409);
     expect(err?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+
+    const afterSnapshot = await captureObservableSnapshot("doc-001-rajesh");
+    assertZeroMutation(beforeSnapshot, afterSnapshot);
   });
 
   it("rejects mismatched reason with LEAVE_PREVIEW_STALE and zero mutation", async () => {
@@ -340,6 +420,8 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
       ends_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
       reason: "Original reason",
     });
+
+    const beforeSnapshot = await captureObservableSnapshot("doc-001-rajesh");
 
     let err: { status?: number; error?: { code?: string } } | null = null;
     try {
@@ -360,6 +442,9 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
     expect(err).toBeDefined();
     expect(err?.status).toBe(409);
     expect(err?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+
+    const afterSnapshot = await captureObservableSnapshot("doc-001-rajesh");
+    assertZeroMutation(beforeSnapshot, afterSnapshot);
   });
 
   it("rejects mismatched expected_schedule_version with LEAVE_PREVIEW_STALE and zero mutation", async () => {
@@ -368,6 +453,8 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
       ends_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
       reason: "Annual retreat",
     });
+
+    const beforeSnapshot = await captureObservableSnapshot("doc-001-rajesh");
 
     let err: { status?: number; error?: { code?: string } } | null = null;
     try {
@@ -388,9 +475,12 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
     expect(err).toBeDefined();
     expect(err?.status).toBe(409);
     expect(err?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+
+    const afterSnapshot = await captureObservableSnapshot("doc-001-rajesh");
+    assertZeroMutation(beforeSnapshot, afterSnapshot);
   });
 
-  it("token becomes stale if doctor schedule version changes before application (concurrent modification)", async () => {
+  it("token becomes stale if doctor schedule version changes before application (concurrent modification) with zero additional mutation", async () => {
     // Generate Preview A
     const previewA = await apiClient.previewDoctorLeave("doc-001-rajesh", {
       starts_at: new Date(Date.now() + 100 * 3600 * 1000).toISOString(),
@@ -416,6 +506,9 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
       }
     );
 
+    // Snapshot observable state after the legitimate intervening mutation
+    const snapshotAfterIntervening = await captureObservableSnapshot("doc-001-rajesh");
+
     // Now applying Preview A must fail because doctor's current schedule version changed
     let staleErr: { status?: number; error?: { code?: string } } | null = null;
     try {
@@ -436,5 +529,9 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
     expect(staleErr).toBeDefined();
     expect(staleErr?.status).toBe(409);
     expect(staleErr?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+
+    // Verify zero additional mutation occurred from rejected stale application
+    const snapshotAfterStaleAttempt = await captureObservableSnapshot("doc-001-rajesh");
+    assertZeroMutation(snapshotAfterIntervening, snapshotAfterStaleAttempt);
   });
 });

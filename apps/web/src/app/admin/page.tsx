@@ -271,12 +271,12 @@ export default function AdminOverviewPage() {
               Preview impact on existing appointments before committing doctor leave (LEAVE-002).
             </p>
           </div>
-          <Link href="/admin/leave">
-            <Button variant="primary" size="default">
+          <Button asChild variant="primary" size="default">
+            <Link href="/admin/leave">
               <span>Schedule & Preview Leave</span>
               <ArrowRight className="h-3.5 w-3.5 text-[#efff72]" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
 
         <div className="rounded-3xl border border-[#e7e7e2] bg-[#fbfbf8] p-5 sm:p-6 space-y-4 hover:border-[#111111] transition-colors duration-150">
@@ -289,12 +289,12 @@ export default function AdminOverviewPage() {
               Inspect failed outbox items and trigger idempotent manual retries (OUTBOX-003).
             </p>
           </div>
-          <Link href="/admin/integrations">
-            <Button variant="primary" size="default">
+          <Button asChild variant="primary" size="default">
+            <Link href="/admin/integrations">
               <span>Inspect & Retry Outbox</span>
               <ArrowRight className="h-3.5 w-3.5 text-[#efff72]" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
       </div>
     </div>
