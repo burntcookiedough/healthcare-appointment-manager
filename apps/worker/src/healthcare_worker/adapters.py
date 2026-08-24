@@ -207,11 +207,13 @@ class InMemoryTrustedDataResolver:
         *,
         email: Mapping[str, EmailContent] | None = None,
         calendar_credentials: Mapping[str, OAuthCredentials] | None = None,
+        calendar_event_references: Mapping[str, str] | None = None,
         summaries: Mapping[str, SummarySource] | None = None,
         prescriptions: Mapping[str, object] | None = None,
     ) -> None:
         self.email = dict(email or {})
         self.calendar_credentials = dict(calendar_credentials or {})
+        self.calendar_event_references = dict(calendar_event_references or {})
         self.summaries = dict(summaries or {})
         self.prescriptions = dict(prescriptions or {})
 
@@ -223,6 +225,11 @@ class InMemoryTrustedDataResolver:
     def resolve_calendar_credentials(self, request: CalendarRequest) -> OAuthCredentials | None:
         key = request.credential_reference or "default"
         return self.calendar_credentials.get(key)
+
+    def resolve_calendar_event_reference(self, request: CalendarRequest) -> str | None:
+        if request.appointment_id is None:
+            return None
+        return self.calendar_event_references.get(str(request.appointment_id))
 
     def resolve_summary_source(self, request: ClinicalSummaryRequest) -> SummarySource | None:
         if request.source_record_reference is None:
@@ -345,6 +352,17 @@ class GoogleCalendarOAuthAdapter(GoogleCalendarPort):
         calendar_reference = quote(request.calendar_reference or "primary", safe="")
         event_reference = request.provider_event_reference
         action = request.action
+        if action == "delete" and not event_reference:
+            # A cancellation must never fall through to the create branch.  The
+            # provider event ID is trusted appointment state, not a value guessed
+            # from the event UUID or accepted from free-form queue content.
+            resolver_fn = getattr(self._resolver, "resolve_calendar_event_reference", None)
+            if not callable(resolver_fn):
+                return AdapterResult.terminal("CALENDAR_EVENT_REFERENCE_MISSING")
+            try:
+                event_reference = resolver_fn(request)
+            except Exception:
+                return AdapterResult.retryable("CALENDAR_REFERENCE_ERROR")
         if action in {"create", "update"} and (
             request.starts_at is None or request.ends_at is None
         ):
@@ -486,6 +504,8 @@ class HttpClinicalLLMAdapter(ClinicalLLMPort):
     def generate_summary(
         self, request: ClinicalSummaryRequest, *, idempotency_key: str
     ) -> AdapterResult:
+        if self._provider in {"none", "disabled"}:
+            return AdapterResult.terminal("PROVIDER_DISABLED")
         if (
             not self._endpoint
             or not self._api_key

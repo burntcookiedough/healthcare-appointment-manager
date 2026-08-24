@@ -140,8 +140,17 @@ def _email_handler(dependencies: HandlerDependencies) -> EventHandler:
 
 def _calendar_handler(dependencies: HandlerDependencies) -> EventHandler:
     def handle(envelope: EventEnvelope) -> ProcessingResult:
+        payload = envelope.safe_payload.as_dict()
+        # Older API cancellation rows carried a cancellation label but omitted
+        # the now-canonical action field.  Translate that explicit legacy shape
+        # to delete; a missing provider reference is handled fail-closed by the
+        # real adapter's trusted resolver and can never become a create.
+        if "action" not in payload and "operation" not in payload:
+            label = payload.get("event_label")
+            if isinstance(label, str) and "cancellation" in label.casefold():
+                payload["action"] = "delete"
         try:
-            request = CalendarRequest.model_validate(envelope.safe_payload.as_dict())
+            request = CalendarRequest.model_validate(payload)
         except ValidationError:
             return ProcessingResult.terminal(
                 envelope.event_id,

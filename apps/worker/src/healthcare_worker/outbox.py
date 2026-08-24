@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -36,47 +37,86 @@ class OutboxRecord:
     created_at: datetime | None = None
     processed_at: datetime | None = None
     appointment_id: UUID | None = None
+    version: int = 1
+    correlation_id: str | None = None
     recovered: bool = False
 
     @classmethod
     def from_mapping(cls, row: Mapping[str, Any], *, recovered: bool = False) -> OutboxRecord:
-        event_id = row.get("event_id", row.get("id"))
+        event_id = row.get("event_id") or row.get("id")
         if not isinstance(event_id, UUID):
             event_id = UUID(str(event_id))
         aggregate_id = row.get("aggregate_id")
         if not isinstance(aggregate_id, UUID):
             aggregate_id = UUID(str(aggregate_id))
-        payload = row.get("payload") or {}
-        if not isinstance(payload, Mapping):
-            raise ValueError("outbox payload must be an object")
+        payload = _decode_json_object(row.get("payload"))
+        raw_appointment_id = row.get("appointment_id")
+        appointment_id = raw_appointment_id
+        if raw_appointment_id is not None and not isinstance(raw_appointment_id, UUID):
+            appointment_id = UUID(str(raw_appointment_id))
+        raw_correlation_id = row.get("correlation_id")
         return cls(
             event_id=event_id,
             event_type=str(row["event_type"]),
             aggregate_type=str(row.get("aggregate_type", "aggregate")),
             aggregate_id=aggregate_id,
             dedupe_key=str(row.get("dedupe_key", event_id)),
-            payload=dict(payload),
+            payload=payload,
             status=str(row.get("status", "pending")),
             attempt_count=int(row.get("attempt_count", 0)),
             next_attempt_at=row.get("next_attempt_at"),
             last_error_code=(str(row["last_error_code"]) if row.get("last_error_code") else None),
             created_at=row.get("created_at"),
             processed_at=row.get("processed_at"),
-            appointment_id=row.get("appointment_id"),
+            appointment_id=appointment_id,
+            version=int(row.get("version", 1)),
+            correlation_id=(str(raw_correlation_id) if raw_correlation_id else None),
             recovered=recovered,
         )
 
-    def envelope(self, *, version: int = 1) -> EventEnvelope:
+    def envelope(self, *, version: int | None = None) -> EventEnvelope:
         """Convert an API row to the narrow versioned worker event envelope."""
 
         return EventEnvelope(
-            version=version,
+            version=self.version if version is None else version,
             event_id=self.event_id,
-            correlation_id=f"outbox:{self.event_id}",
+            correlation_id=self.correlation_id or f"outbox:{self.event_id}",
             aggregate_id=self.aggregate_id,
             event_type=self.event_type,
             payload=self.payload,
         )
+
+
+def _decode_json_object(value: Any) -> dict[str, JsonValue]:
+    """Normalize asyncpg JSONB output without exposing conversion details.
+
+    asyncpg normally decodes JSONB to a mapping, but deployments may register a
+    text/bytes codec.  Claim conversion is performed inside the SQL transaction,
+    so a malformed value raises before the claim can commit and the row remains
+    claimable.
+    """
+
+    if value is None:
+        return {}
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, memoryview):
+        value = value.tobytes()
+    if isinstance(value, bytearray):
+        value = bytes(value)
+    if isinstance(value, bytes):
+        try:
+            value = value.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise ValueError("outbox payload is not valid JSON") from error
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except (TypeError, json.JSONDecodeError) as error:
+            raise ValueError("outbox payload is not valid JSON") from error
+        if isinstance(decoded, Mapping):
+            return dict(decoded)
+    raise ValueError("outbox payload must be a JSON object")
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,7 +172,7 @@ WHERE event.id = candidates.id
 RETURNING event.id, event.event_type, event.aggregate_type, event.aggregate_id,
           event.appointment_id, event.dedupe_key, event.payload, event.status,
           event.attempt_count, event.next_attempt_at, event.last_error_code,
-          event.created_at, event.processed_at
+          event.created_at, event.processed_at, event.version, event.correlation_id
 """
 
 MARK_SUCCEEDED_SQL = """
@@ -156,6 +196,44 @@ SET status = 'failed', processed_at = now(), next_attempt_at = now(),
 WHERE id = $1 AND status = 'processing' AND attempt_count = $2
 """
 
+# Integration operations are linked by the outbox UUID.  These statements are
+# executed on the same connection and transaction as their outbox status update;
+# an exception rolls both changes back.  Provider references are intentionally
+# preserved when a retry/terminal result has no new reference.
+SYNC_INTEGRATION_SUCCEEDED_SQL = """
+UPDATE integration_operations
+SET state = 'succeeded',
+    attempt_count = GREATEST(attempt_count, $2),
+    last_attempt_at = now(),
+    error_code = NULL,
+    provider_reference = COALESCE(NULLIF($3, ''), provider_reference),
+    version = version + 1,
+    updated_at = now()
+WHERE outbox_event_id = $1
+"""
+
+SYNC_INTEGRATION_RETRYABLE_SQL = """
+UPDATE integration_operations
+SET state = 'retrying',
+    attempt_count = GREATEST(attempt_count, $2),
+    last_attempt_at = now(),
+    error_code = $3,
+    version = version + 1,
+    updated_at = now()
+WHERE outbox_event_id = $1
+"""
+
+SYNC_INTEGRATION_FAILED_SQL = """
+UPDATE integration_operations
+SET state = 'failed',
+    attempt_count = GREATEST(attempt_count, $2),
+    last_attempt_at = now(),
+    error_code = $3,
+    version = version + 1,
+    updated_at = now()
+WHERE outbox_event_id = $1
+"""
+
 
 class PostgresOutboxStore:
     """Asyncpg-backed store compatible with the API's Phase 1 schema."""
@@ -173,7 +251,10 @@ class PostgresOutboxStore:
             import asyncpg
         except ImportError as error:  # pragma: no cover - exercised only in misconfigured deploys
             raise RuntimeError("asyncpg is required for PostgreSQL outbox polling") from error
-        pool = await asyncpg.create_pool(dsn, min_size=min_size, max_size=max_size)
+        # The API documents SQLAlchemy's ``postgresql+asyncpg://`` form while
+        # asyncpg itself expects the driver-neutral ``postgresql://`` scheme.
+        normalized_dsn = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
+        pool = await asyncpg.create_pool(normalized_dsn, min_size=min_size, max_size=max_size)
         return cls(pool)
 
     async def close(self) -> None:
@@ -182,33 +263,39 @@ class PostgresOutboxStore:
     async def claim_batch(self, *, limit: int, lease_seconds: float) -> list[ClaimedOutboxEvent]:
         if limit < 1 or lease_seconds <= 0:
             raise ValueError("claim limit and lease must be positive")
+        # Decode all returned JSONB values before leaving this transaction.  If
+        # one row cannot be converted, the transaction rolls back the UPDATE and
+        # its lease, rather than stranding a row in ``processing``.
         async with self._pool.acquire() as connection, connection.transaction():
             rows = await connection.fetch(CLAIM_BATCH_SQL, limit, lease_seconds)
-        claimed: list[ClaimedOutboxEvent] = []
-        for row in rows:
-            record = OutboxRecord.from_mapping(row)
-            lease_until = record.next_attempt_at or datetime.now(UTC) + timedelta(
-                seconds=lease_seconds
-            )
-            claimed.append(
-                ClaimedOutboxEvent(
-                    record=record, attempt=record.attempt_count, lease_until=lease_until
+            claimed: list[ClaimedOutboxEvent] = []
+            for row in rows:
+                record = OutboxRecord.from_mapping(row)
+                lease_until = record.next_attempt_at or datetime.now(UTC) + timedelta(
+                    seconds=lease_seconds
                 )
-            )
+                claimed.append(
+                    ClaimedOutboxEvent(
+                        record=record, attempt=record.attempt_count, lease_until=lease_until
+                    )
+                )
         return claimed
 
     async def mark_succeeded(
         self, event_id: UUID, *, attempt: int, provider_reference: str | None
     ) -> bool:
-        del provider_reference  # Provider references have a separate integration table in the API.
-        async with self._pool.acquire() as connection:
+        async with self._pool.acquire() as connection, connection.transaction():
             status = await connection.execute(MARK_SUCCEEDED_SQL, event_id, attempt)
+            if _updated_one(status):
+                await connection.execute(
+                    SYNC_INTEGRATION_SUCCEEDED_SQL, event_id, attempt, provider_reference
+                )
         return _updated_one(status)
 
     async def mark_retryable(
         self, event_id: UUID, *, attempt: int, error_code: str, delay_seconds: float
     ) -> bool:
-        async with self._pool.acquire() as connection:
+        async with self._pool.acquire() as connection, connection.transaction():
             status = await connection.execute(
                 MARK_RETRYABLE_SQL,
                 event_id,
@@ -216,11 +303,17 @@ class PostgresOutboxStore:
                 max(0.0, min(delay_seconds, 3600.0)),
                 error_code,
             )
+            if _updated_one(status):
+                await connection.execute(
+                    SYNC_INTEGRATION_RETRYABLE_SQL, event_id, attempt, error_code
+                )
         return _updated_one(status)
 
     async def mark_failed(self, event_id: UUID, *, attempt: int, error_code: str) -> bool:
-        async with self._pool.acquire() as connection:
+        async with self._pool.acquire() as connection, connection.transaction():
             status = await connection.execute(MARK_FAILED_SQL, event_id, attempt, error_code)
+            if _updated_one(status):
+                await connection.execute(SYNC_INTEGRATION_FAILED_SQL, event_id, attempt, error_code)
         return _updated_one(status)
 
     async def healthcheck(self) -> bool:
@@ -475,7 +568,8 @@ class InMemoryOutboxStore:
         self.records[event_id] = replace(
             record, status="succeeded", processed_at=now, next_attempt_at=now
         )
-        self.provider_references[event_id] = provider_reference
+        if provider_reference or event_id not in self.provider_references:
+            self.provider_references[event_id] = provider_reference
         return True
 
     async def mark_retryable(

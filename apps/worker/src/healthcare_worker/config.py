@@ -12,10 +12,19 @@ from pydantic import Field, RedisDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "test", "staging", "production"]
+LLMProvider = Literal["none", "disabled", "openai", "gemini", "generic"]
 
 
 class WorkerSettings(BaseSettings):
-    """Environment-backed settings with bounded retry controls."""
+    """Environment-backed settings with bounded retry controls.
+
+    Every field is read from the exact ``HEALTHCARE_WORKER_`` namespace.  Provider
+    credentials are optional for core booking, but a selected provider without
+    its required credentials remains an explicit ``PROVIDER_NOT_CONFIGURED``
+    failure; it is never silently replaced with a fake adapter.  Set
+    ``HEALTHCARE_WORKER_LLM_PROVIDER=none`` (or ``disabled``) to intentionally
+    disable LLM work.
+    """
 
     model_config = SettingsConfigDict(
         env_prefix="HEALTHCARE_WORKER_",
@@ -54,7 +63,7 @@ class WorkerSettings(BaseSettings):
     )
     llm_endpoint: str | None = Field(default=None, min_length=8, max_length=500)
     llm_api_key: SecretStr | None = None
-    llm_provider: Literal["openai", "gemini", "generic"] = "generic"
+    llm_provider: LLMProvider = "generic"
     llm_model: str = Field(default="", max_length=128)
     llm_prompt_version: str = Field(default="clinical.v1", min_length=1, max_length=64)
     llm_schema_version: str = Field(default="clinical.v1", min_length=1, max_length=64)

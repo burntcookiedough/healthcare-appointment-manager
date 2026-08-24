@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from .results import ProcessingOutcome
 
@@ -137,6 +137,23 @@ class ClinicalSummaryRequest(BaseModel):
     schema_version: str = Field(default="clinical.v1", min_length=1, max_length=64)
     credential_reference: str | None = Field(default=None, max_length=128)
 
+    @field_validator("task_kind", mode="before")
+    @classmethod
+    def map_legacy_task_kind(cls, value: object) -> object:
+        """Keep the API's older post-visit spelling readable during rollout.
+
+        The canonical contract is ``pre_visit``, ``post_visit``, and
+        ``plain_language_summary``.  API snapshots that predate that contract
+        emit ``pre_visit_brief`` and ``post_visit_summary``; accepting those two
+        explicit aliases avoids dropping already committed work while unknown
+        values still fail the Literal validation below.
+        """
+
+        legacy_values = {"pre_visit_brief": "pre_visit", "post_visit_summary": "post_visit"}
+        if isinstance(value, str):
+            return legacy_values.get(value, value)
+        return value
+
 
 class EmailContent(BaseModel):
     """Sensitive content resolved at execution time, never accepted in an event."""
@@ -190,6 +207,9 @@ class TrustedDataResolver(Protocol):
 
     def resolve_calendar_credentials(self, request: CalendarRequest) -> OAuthCredentials | None:
         """Resolve an access token without placing it in an event or log."""
+
+    def resolve_calendar_event_reference(self, request: CalendarRequest) -> str | None:
+        """Resolve the provider event ID for a trusted appointment reference."""
 
     def resolve_summary_source(self, request: ClinicalSummaryRequest) -> SummarySource | None:
         """Resolve source clinical text from a trusted reference."""

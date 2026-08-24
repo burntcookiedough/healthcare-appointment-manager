@@ -12,6 +12,9 @@ import pytest
 from pydantic import ValidationError
 
 from healthcare_worker.adapters import (
+    DeterministicFakeClinicalLLMAdapter,
+    DeterministicFakeEmailAdapter,
+    DeterministicFakeGoogleCalendarAdapter,
     GoogleCalendarOAuthAdapter,
     HttpClinicalLLMAdapter,
     HttpResponse,
@@ -27,7 +30,12 @@ from healthcare_worker.events import (
 )
 from healthcare_worker.handlers import HandlerDependencies, build_default_registry
 from healthcare_worker.llm import InMemorySummaryRepository
-from healthcare_worker.outbox import InMemoryOutboxStore, OutboxPoller, OutboxRecord
+from healthcare_worker.outbox import (
+    InMemoryOutboxStore,
+    OutboxPoller,
+    OutboxRecord,
+    PostgresOutboxStore,
+)
 from healthcare_worker.ports import (
     CalendarRequest,
     ClinicalSummaryRequest,
@@ -72,12 +80,6 @@ def test_api_event_contract_is_explicit_and_translated() -> None:
 
 
 def test_appointment_confirmed_dispatches_email_and_calendar_projections() -> None:
-    from healthcare_worker.adapters import (
-        DeterministicFakeClinicalLLMAdapter,
-        DeterministicFakeEmailAdapter,
-        DeterministicFakeGoogleCalendarAdapter,
-    )
-
     email = DeterministicFakeEmailAdapter()
     calendar = DeterministicFakeGoogleCalendarAdapter()
     dependencies = HandlerDependencies(
@@ -102,6 +104,182 @@ def test_appointment_confirmed_dispatches_email_and_calendar_projections() -> No
     assert result.is_success
     assert [call.idempotency_key for call in email.calls] == [f"{item.event_id}:email"]
     assert [call.idempotency_key for call in calendar.calls] == [f"{item.event_id}:calendar"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"appointment_id": "synthetic-ref", "action": "delete"},
+        '{"appointment_id":"synthetic-ref","action":"delete"}',
+        b'{"appointment_id":"synthetic-ref","action":"delete"}',
+    ],
+)
+def test_outbox_record_decodes_mapping_text_and_safe_bytes(payload: object) -> None:
+    event_id = uuid4()
+    record = OutboxRecord.from_mapping(
+        {
+            "id": event_id,
+            "event_type": EventType.CALENDAR_SYNC.value,
+            "aggregate_type": "appointment",
+            "aggregate_id": uuid4(),
+            "dedupe_key": "calendar:decode",
+            "payload": payload,
+        }
+    )
+    assert record.payload["action"] == "delete"
+
+
+def test_outbox_record_rejects_invalid_json_without_payload_echo() -> None:
+    with pytest.raises(ValueError, match="outbox payload"):
+        OutboxRecord.from_mapping(
+            {
+                "id": uuid4(),
+                "event_type": EventType.CALENDAR_SYNC.value,
+                "aggregate_id": uuid4(),
+                "payload": b"not-json synthetic clinical text",
+            }
+        )
+
+
+def test_legacy_calendar_cancellation_is_delete_and_never_create() -> None:
+    calendar = DeterministicFakeGoogleCalendarAdapter()
+    appointment_id = uuid4()
+    dependencies = HandlerDependencies(
+        email=DeterministicFakeEmailAdapter(),
+        calendar=calendar,
+        clinical_llm=DeterministicFakeClinicalLLMAdapter(),
+    )
+    result = process_envelope(
+        envelope(
+            EventType.CALENDAR_SYNC.value,
+            {
+                "appointment_id": str(appointment_id),
+                "event_label": "Healthcare appointment cancellation",
+            },
+        ),
+        registry=build_default_registry(dependencies),
+        deduplication=None,
+    )
+    assert result.is_success
+    assert len(calendar.calls) == 1
+    assert isinstance(calendar.calls[0].request, CalendarRequest)
+    assert calendar.calls[0].request.action == "delete"
+
+
+def test_calendar_delete_resolves_trusted_provider_reference() -> None:
+    appointment_id = uuid4()
+    resolver = InMemoryTrustedDataResolver(
+        calendar_credentials={"default": OAuthCredentials(access_token="synthetic-token")},
+        calendar_event_references={str(appointment_id): "trusted-event-1"},
+    )
+    transport = FakeTransport(HttpResponse(204, {}))
+    adapter = GoogleCalendarOAuthAdapter(
+        client_id="client",
+        client_secret="secret",
+        resolver=resolver,
+        transport=transport,
+    )
+    result = adapter.upsert_event(
+        CalendarRequest(appointment_id=appointment_id, action="delete"),
+        idempotency_key="event:calendar",
+    )
+    assert result.is_success
+    assert transport.requests[0][0] == "DELETE"
+    assert transport.requests[0][1].endswith("/trusted-event-1")
+
+
+def test_canonical_and_legacy_llm_task_kinds_are_explicit() -> None:
+    for task_kind in ("pre_visit", "post_visit", "plain_language_summary"):
+        assert ClinicalSummaryRequest(task_kind=task_kind).task_kind == task_kind
+    assert ClinicalSummaryRequest(task_kind="pre_visit_brief").task_kind == "pre_visit"
+    assert ClinicalSummaryRequest(task_kind="post_visit_summary").task_kind == "post_visit"
+    with pytest.raises(ValidationError):
+        ClinicalSummaryRequest(task_kind="unsupported_summary")
+
+
+def test_invalid_llm_task_kind_is_terminal_without_payload_logging(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source_id = uuid4()
+    with caplog.at_level("INFO"):
+        result = process_envelope(
+            envelope(
+                EventType.CLINICAL_LLM_SUMMARY.value,
+                {
+                    "source_record_reference": str(source_id),
+                    "source_version": 1,
+                    "task_kind": "unsupported_summary",
+                },
+            ),
+            registry=build_default_registry(),
+            deduplication=None,
+        )
+    assert result.outcome is ProcessingOutcome.TERMINAL_FAILURE
+    assert result.error_code == "INVALID_EVENT_PAYLOAD"
+    assert "unsupported_summary" not in caplog.text
+
+
+def test_postgres_claim_rolls_back_when_jsonb_conversion_fails() -> None:
+    class FakeTransaction:
+        def __init__(self) -> None:
+            self.exception_type: type[BaseException] | None = None
+
+        async def __aenter__(self) -> FakeTransaction:
+            return self
+
+        async def __aexit__(
+            self,
+            exception_type: type[BaseException] | None,
+            _exception: BaseException | None,
+            _traceback: object,
+        ) -> bool:
+            self.exception_type = exception_type
+            return False
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.transaction_context = FakeTransaction()
+
+        def transaction(self) -> FakeTransaction:
+            return self.transaction_context
+
+        async def fetch(self, *_args: object) -> list[dict[str, object]]:
+            return [
+                {
+                    "id": uuid4(),
+                    "event_type": EventType.EMAIL_NOTIFICATION.value,
+                    "aggregate_type": "appointment",
+                    "aggregate_id": uuid4(),
+                    "dedupe_key": "decode-failure",
+                    "payload": b"{malformed",
+                }
+            ]
+
+    class FakeAcquire:
+        def __init__(self, connection: FakeConnection) -> None:
+            self.connection = connection
+
+        async def __aenter__(self) -> FakeConnection:
+            return self.connection
+
+        async def __aexit__(self, *_args: object) -> bool:
+            return False
+
+    class FakePool:
+        def __init__(self) -> None:
+            self.connection = FakeConnection()
+
+        def acquire(self) -> FakeAcquire:
+            return FakeAcquire(self.connection)
+
+    pool = FakePool()
+
+    async def scenario() -> None:
+        with pytest.raises(ValueError, match="outbox payload"):
+            await PostgresOutboxStore(pool).claim_batch(limit=1, lease_seconds=10)
+
+    asyncio.run(scenario())
+    assert pool.connection.transaction_context.exception_type is ValueError
 
 
 def test_outbox_poller_persists_retry_then_success_and_recovers_leases() -> None:

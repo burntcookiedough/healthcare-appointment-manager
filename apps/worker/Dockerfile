@@ -9,8 +9,9 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 
-RUN pip install --no-cache-dir uv \
+RUN pip install --no-cache-dir uv==0.11.13 \
     && uv sync --frozen --no-dev
 
 USER 10001:10001
-ENTRYPOINT [".venv/bin/celery", "-A", "healthcare_worker.celery_app:celery_app", "worker"]
+ENTRYPOINT [".venv/bin/python", "-m", "healthcare_worker"]
+CMD ["--poller"]
