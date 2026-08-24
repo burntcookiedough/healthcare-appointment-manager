@@ -9,6 +9,7 @@ import {
   setStoredSession,
   clearStoredSession,
   refreshSessionDeduplicated,
+  onAuthInvalidated,
 } from "./supabase-auth";
 
 export interface AuthContextType {
@@ -68,6 +69,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Listen for authentication invalidation events (e.g. 401 refresh failure)
+    const unsubscribe = onAuthInvalidated(() => {
+      if (!isDemo) {
+        setUser(null);
+        setApiAuthToken(null);
+      }
+    });
+
     if (isDemo) {
       let initialRole: UserRole = "patient";
       if (typeof window !== "undefined") {
@@ -82,6 +91,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       bootstrapProductionSession();
     }
+
+    return () => {
+      unsubscribe();
+    };
   }, [isDemo, bootstrapProductionSession]);
 
   const handleSetRole = (newRole: UserRole) => {

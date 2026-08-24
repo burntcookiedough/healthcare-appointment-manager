@@ -289,11 +289,39 @@ export const supabaseAuth = {
   },
 };
 
+export type AuthInvalidationListener = () => void;
+const invalidationListeners = new Set<AuthInvalidationListener>();
+
+/**
+ * Subscribe to authentication invalidation events (session expired/cleared).
+ * Returns an unsubscribe cleanup function.
+ */
+export function onAuthInvalidated(listener: AuthInvalidationListener): () => void {
+  invalidationListeners.add(listener);
+  return () => {
+    invalidationListeners.delete(listener);
+  };
+}
+
+/**
+ * Dispatch an authentication invalidation event to all active subscribers.
+ */
+export function notifyAuthInvalidated(): void {
+  invalidationListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch {
+      // Catch listener errors to avoid breaking event dispatch
+    }
+  });
+}
+
 let activeRefreshPromise: Promise<SupabaseAuthSession | null> | null = null;
 
 /**
  * Deduplicated token refresh helper.
  * When multiple API requests encounter 401 simultaneously, they join a single in-flight refresh.
+ * If refresh fails, storage is cleared, active token is cleared, and invalidation is notified once.
  */
 export async function refreshSessionDeduplicated(
   onTokenRefreshed?: (token: string | null) => void
@@ -306,6 +334,7 @@ export async function refreshSessionDeduplicated(
   if (!stored || !stored.refresh_token) {
     clearStoredSession();
     if (onTokenRefreshed) onTokenRefreshed(null);
+    notifyAuthInvalidated();
     return null;
   }
 
@@ -318,6 +347,7 @@ export async function refreshSessionDeduplicated(
     } catch {
       clearStoredSession();
       if (onTokenRefreshed) onTokenRefreshed(null);
+      notifyAuthInvalidated();
       return null;
     } finally {
       activeRefreshPromise = null;

@@ -13,6 +13,7 @@ import {
 } from "@/features/auth/supabase-auth";
 import { AuthProvider, useAuth } from "@/features/auth/auth-context";
 import { RoleGuard } from "@/components/auth/RoleGuard";
+import { Navbar } from "@/components/layout/Navbar";
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -377,5 +378,286 @@ describe("Production Authentication & Security Boundary", () => {
     });
     expect(authContext!.role).toBe("admin");
     expect(authContext!.user?.profile_id).toBe("adm-001-ops");
+  });
+
+  it("10. failed automatic refresh notifies AuthProvider to set user to null without page reload", async () => {
+    setStoredSession({
+      access_token: "expired-token",
+      refresh_token: "invalid-refresh-token",
+      expires_in: 3600,
+      expires_at: Date.now() + 3600000,
+      token_type: "bearer",
+      user: { id: "u-1", email: "user@example.com" },
+    });
+    setApiAuthToken("expired-token");
+
+    // Mock initial getMe bootstrap succeeding
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        subject_id: "u-1",
+        role: "doctor",
+        available_roles: ["doctor"],
+        profile_id: "doc-real-123",
+        display_name: "Dr. Real Doctor",
+        email: "user@example.com",
+      }),
+    });
+
+    let authContext: ReturnType<typeof useAuth> | null = null;
+    function Consumer() {
+      authContext = useAuth();
+      return <div>User: {authContext.user?.display_name || "Unauthenticated"}</div>;
+    }
+
+    const qc = createTestQueryClient();
+    render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <Consumer />
+        </AuthProvider>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByText("User: Dr. Real Doctor")).toBeInTheDocument();
+    expect(authContext!.user).not.toBeNull();
+
+    // Now trigger an API call that encounters 401 and failed token refresh
+    // 1. API request returns 401
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      json: async () => ({ error: { code: "AUTHENTICATION_REQUIRED", message: "Token expired" } }),
+    });
+    // 2. Token refresh request fails with 400
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => ({ error_description: "Refresh token revoked" }),
+    });
+
+    await act(async () => {
+      await expect(apiClient.getAppointments("doctor")).rejects.toMatchObject({
+        status: 401,
+      });
+    });
+
+    // Verify storage and active token were cleared
+    expect(getStoredSession()).toBeNull();
+
+    // Verify React state updated immediately without page reload
+    expect(await screen.findByText("User: Unauthenticated")).toBeInTheDocument();
+    expect(authContext!.user).toBeNull();
+  });
+
+  it("11. RoleGuard immediately switches to Authentication Required when auth is invalidated", async () => {
+    setStoredSession({
+      access_token: "expired-token",
+      refresh_token: "invalid-refresh-token",
+      expires_in: 3600,
+      expires_at: Date.now() + 3600000,
+      token_type: "bearer",
+      user: { id: "u-1", email: "user@example.com" },
+    });
+    setApiAuthToken("expired-token");
+
+    // Mock initial getMe
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        subject_id: "u-1",
+        role: "doctor",
+        available_roles: ["doctor"],
+        profile_id: "doc-real-123",
+        display_name: "Dr. Real Doctor",
+        email: "user@example.com",
+      }),
+    });
+
+    const qc = createTestQueryClient();
+    render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <RoleGuard allowedRoles={["doctor"]}>
+            <div>Confidential Clinical Workspace</div>
+          </RoleGuard>
+        </AuthProvider>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByText("Confidential Clinical Workspace")).toBeInTheDocument();
+
+    // Trigger 401 with failed refresh
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      json: async () => ({ error: { code: "AUTHENTICATION_REQUIRED", message: "Token expired" } }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => ({ error_description: "Refresh token revoked" }),
+    });
+
+    await act(async () => {
+      await expect(apiClient.getAppointments("doctor")).rejects.toMatchObject({
+        status: 401,
+      });
+    });
+
+    // RoleGuard must immediately render Authentication Required
+    expect(await screen.findByText(/Authentication Required/i)).toBeInTheDocument();
+    expect(screen.queryByText("Confidential Clinical Workspace")).not.toBeInTheDocument();
+  });
+
+  it("12. Navbar immediately clears old user identity and displays Sign In on auth invalidation", async () => {
+    setStoredSession({
+      access_token: "expired-token",
+      refresh_token: "invalid-refresh-token",
+      expires_in: 3600,
+      expires_at: Date.now() + 3600000,
+      token_type: "bearer",
+      user: { id: "u-1", email: "user@example.com" },
+    });
+    setApiAuthToken("expired-token");
+
+    // Mock initial getMe
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        subject_id: "u-1",
+        role: "patient",
+        available_roles: ["patient"],
+        profile_id: "pat-real-999",
+        display_name: "Priya Sharma",
+        email: "priya@example.com",
+      }),
+    });
+
+    const qc = createTestQueryClient();
+    render(
+      <QueryClientProvider client={qc}>
+        <AuthProvider>
+          <Navbar />
+        </AuthProvider>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByText("Priya Sharma")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Sign Out/i })).toBeInTheDocument();
+
+    // Trigger 401 with failed refresh
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      json: async () => ({ error: { code: "AUTHENTICATION_REQUIRED", message: "Token expired" } }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => ({ error_description: "Refresh token revoked" }),
+    });
+
+    await act(async () => {
+      await expect(apiClient.getAppointments("patient")).rejects.toMatchObject({
+        status: 401,
+      });
+    });
+
+    // Navbar must immediately render Sign In link and remove old user name
+    expect(await screen.findByRole("link", { name: /Sign In/i })).toBeInTheDocument();
+    expect(screen.queryByText("Priya Sharma")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Sign Out/i })).not.toBeInTheDocument();
+  });
+
+  it("13. only one invalidation notification is dispatched across multiple concurrent 401s", async () => {
+    setStoredSession({
+      access_token: "expired-token",
+      refresh_token: "invalid-refresh-token",
+      expires_in: 3600,
+      expires_at: Date.now() - 1000,
+      token_type: "bearer",
+      user: { id: "u-1", email: "user@example.com" },
+    });
+    setApiAuthToken("expired-token");
+
+    // 2 concurrent API requests returning 401
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      json: async () => ({ error: { code: "AUTHENTICATION_REQUIRED", message: "Token expired" } }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      json: async () => ({ error: { code: "AUTHENTICATION_REQUIRED", message: "Token expired" } }),
+    });
+    // Single shared refresh attempt that fails
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => ({ error_description: "Refresh token revoked" }),
+    });
+
+    const [res1, res2] = await Promise.allSettled([
+      apiClient.getAppointments("patient"),
+      apiClient.getAppointments("doctor"),
+    ]);
+
+    expect(res1.status).toBe("rejected");
+    expect(res2.status).toBe("rejected");
+
+    // Refresh endpoint was called exactly once despite 2 concurrent 401s
+    const refreshCalls = mockFetch.mock.calls.filter(([url]) =>
+      url.includes("/auth/v1/token?grant_type=refresh_token")
+    );
+    expect(refreshCalls.length).toBe(1);
+    expect(getStoredSession()).toBeNull();
+  });
+
+  it("14. ordinary 403 authorization failures do NOT invalidate authentication or clear session", async () => {
+    setStoredSession({
+      access_token: "valid-patient-token",
+      refresh_token: "valid-patient-refresh",
+      expires_in: 3600,
+      expires_at: Date.now() + 3600000,
+      token_type: "bearer",
+      user: { id: "u-patient", email: "patient@example.com" },
+    });
+    setApiAuthToken("valid-patient-token");
+
+    // 403 Forbidden response (e.g. patient attempting admin route)
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      json: async () => ({ error: { code: "INSUFFICIENT_PERMISSIONS", message: "Role patient is forbidden" } }),
+    });
+
+    await expect(apiClient.getDoctorLeaves()).rejects.toMatchObject({
+      status: 403,
+      error: { code: "INSUFFICIENT_PERMISSIONS" },
+    });
+
+    // Stored session and token remain valid and NOT invalidated
+    expect(getStoredSession()).not.toBeNull();
+    expect(getStoredSession()?.access_token).toBe("valid-patient-token");
+    // Refresh was NOT called
+    expect(mockFetch).not.toHaveBeenCalledWith(
+      expect.stringContaining("refresh_token"),
+      expect.anything()
+    );
   });
 });

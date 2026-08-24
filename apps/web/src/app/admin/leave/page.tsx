@@ -31,7 +31,7 @@ export default function AdminLeavePage() {
   const queryClient = useQueryClient();
 
   const [isScheduleLeaveOpen, setIsScheduleLeaveOpen] = React.useState(false);
-  const [selectedDoctorId, setSelectedDoctorId] = React.useState("doc-001-rajesh");
+  const [selectedDoctorId, setSelectedDoctorId] = React.useState<string>("");
   const [startDateStr, setStartDateStr] = React.useState(() => {
     const d = addDays(new Date(), 1);
     return `${d.toISOString().split("T")[0]}T09:00`;
@@ -51,6 +51,21 @@ export default function AdminLeavePage() {
     queryFn: () => apiClient.getDoctors(),
   });
 
+  // Automatically select the first doctor when doctors are fetched, preserving existing selection if valid
+  React.useEffect(() => {
+    if (doctors && doctors.length > 0) {
+      setSelectedDoctorId((prev) => {
+        const stillExists = doctors.some((d) => d.id === prev);
+        if (stillExists) return prev;
+        return doctors[0].id;
+      });
+    } else if (doctors && doctors.length === 0) {
+      setSelectedDoctorId("");
+    }
+  }, [doctors]);
+
+  const isValidDoctorSelected = Boolean(selectedDoctorId && doctors?.some((d) => d.id === selectedDoctorId));
+
   // Query all leaves
   const { data: leaves, isLoading } = useQuery({
     queryKey: ["admin-all-leaves"],
@@ -60,6 +75,9 @@ export default function AdminLeavePage() {
   // Mutation 1: Fetch Impact Preview (LEAVE-002)
   const previewMutation = useMutation({
     mutationFn: async () => {
+      if (!isValidDoctorSelected) {
+        throw new Error("No valid doctor selected");
+      }
       const startsAtISO = parseLocalISTToUTCISO(startDateStr);
       const endsAtISO = parseLocalISTToUTCISO(endDateStr);
       return apiClient.previewDoctorLeave(selectedDoctorId, {
@@ -121,7 +139,11 @@ export default function AdminLeavePage() {
 
   const handleStartPreview = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!leaveReason) {
+    if (!isValidDoctorSelected) {
+      toast.error("Please select a valid doctor from the roster.");
+      return;
+    }
+    if (!leaveReason.trim()) {
       toast.error("Please enter a reason for the leave.");
       return;
     }
@@ -185,7 +207,7 @@ export default function AdminLeavePage() {
                 {leaves.map((l) => (
                   <tr key={l.id} className="hover:bg-[#fbfbf8]/80 transition-colors">
                     <td className="py-4 px-6 font-bold text-[#111111]">
-                      {l.doctor_name || "Dr. Rajesh Verma"}
+                      {l.doctor_name || (l.doctor_id ? `Doctor (${l.doctor_id})` : "Doctor name unavailable")}
                     </td>
                     <td className="py-4 px-6 text-[#111111]">
                       <div className="font-mono">{formatDateTime(l.starts_at)}</div>
@@ -224,11 +246,22 @@ export default function AdminLeavePage() {
             </DialogHeader>
 
             <div className="space-y-4 py-2">
+              {(!doctors || doctors.length === 0) && (
+                <div className="rounded-xl border border-[#fedf89] bg-[#fff8eb] p-3 text-xs text-[#b54708]">
+                  No active doctors available in roster. Please add a doctor in Doctor Roster before scheduling leave.
+                </div>
+              )}
+
               <Select
                 label="Select Doctor"
                 value={selectedDoctorId}
+                disabled={!doctors || doctors.length === 0}
                 onChange={(e) => setSelectedDoctorId(e.target.value)}
-                options={doctors?.map((d) => ({ value: d.id, label: `${d.name} (${d.specialization})` }))}
+                options={
+                  doctors && doctors.length > 0
+                    ? doctors.map((d) => ({ value: d.id, label: `${d.name} (${d.specialization})` }))
+                    : [{ value: "", label: "No doctors available" }]
+                }
               />
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -261,7 +294,12 @@ export default function AdminLeavePage() {
               <Button type="button" variant="outline" onClick={() => setIsScheduleLeaveOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" variant="primary" isLoading={previewMutation.isPending}>
+              <Button
+                type="submit"
+                variant="primary"
+                isLoading={previewMutation.isPending}
+                disabled={!isValidDoctorSelected || previewMutation.isPending}
+              >
                 <span>Generate Impact Preview</span>
                 <ArrowRight className="h-4 w-4 text-[#efff72]" />
               </Button>
@@ -277,7 +315,7 @@ export default function AdminLeavePage() {
             <DialogTitle>Leave Impact Preview & Confirmation</DialogTitle>
             <DialogDescription>
               Review the affected appointments and holds that will be automatically updated upon applying leave for{" "}
-              <strong>{selectedDoctor?.name}</strong>.
+              <strong>{selectedDoctor?.name || (selectedDoctorId ? `Doctor (${selectedDoctorId})` : "the selected doctor")}</strong>.
             </DialogDescription>
           </DialogHeader>
 

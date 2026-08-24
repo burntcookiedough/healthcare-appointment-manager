@@ -24,7 +24,8 @@ const DURATION_OPTIONS = [15, 30, 45];
 export default function DoctorDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const doctorId = (params?.id as string) || "doc-001-rajesh";
+  const rawId = params?.id;
+  const doctorId = typeof rawId === "string" && rawId.trim() !== "" ? rawId : "";
 
   const [selectedDuration, setSelectedDuration] = React.useState<number>(30);
   const [selectedDate, setSelectedDate] = React.useState<Date>(() => new Date());
@@ -32,14 +33,18 @@ export default function DoctorDetailPage() {
   // Query Doctor Profile
   const { data: doctor, isLoading: isDocLoading, error: docError } = useQuery({
     queryKey: ["doctor-detail", doctorId],
-    queryFn: () => apiClient.getDoctorDetail(doctorId),
+    queryFn: () => (doctorId ? apiClient.getDoctorDetail(doctorId) : Promise.reject("Missing doctor ID")),
+    enabled: Boolean(doctorId),
   });
 
   // Query Availability Slots
   const { data: slots, isLoading: isSlotsLoading } = useQuery({
     queryKey: ["doctor-slots", doctorId, selectedDate.toISOString().split("T")[0], selectedDuration],
-    queryFn: () => apiClient.getDoctorAvailability(doctorId, selectedDate, selectedDuration),
-    enabled: Boolean(doctor),
+    queryFn: () =>
+      doctorId
+        ? apiClient.getDoctorAvailability(doctorId, selectedDate, selectedDuration)
+        : Promise.resolve([]),
+    enabled: Boolean(doctorId && doctor),
   });
 
   // Next 7 days helper
@@ -51,6 +56,27 @@ export default function DoctorDetailPage() {
     }
     return list;
   }, []);
+
+  if (!doctorId) {
+    return (
+      <div className="space-y-6">
+        <Link
+          href="/patient/doctors"
+          className="inline-flex min-h-[44px] items-center gap-1.5 text-xs font-semibold text-[#626262] hover:text-[#111111] transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span>Back to Specialist Directory</span>
+        </Link>
+        <EmptyState
+          icon={AlertCircle}
+          title="Invalid doctor identifier"
+          description="The requested doctor identifier is missing or invalid. Please select a doctor from the specialist directory."
+          actionLabel="Back to Doctors"
+          onAction={() => router.push("/patient/doctors")}
+        />
+      </div>
+    );
+  }
 
   if (isDocLoading) {
     return <CardSkeleton />;
