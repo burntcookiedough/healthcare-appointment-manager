@@ -137,6 +137,7 @@ jobs:
         working-directory: apps/worker
     env:
       HEALTHCARE_WORKER_DATABASE_URL: postgresql://healthcare:healthcare@localhost:5432/healthcare_worker_test
+      HEALTHCARE_TEST_DATABASE_URL: postgresql://healthcare:healthcare@localhost:5432/healthcare_worker_test
     steps:
       - name: Check out source
         uses: actions/checkout@v4
