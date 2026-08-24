@@ -1,123 +1,440 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { apiClient } from "@/lib/api/client";
 
-describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, AT-LEAVE-002)", () => {
-  it("generates a preview token and identifies affected appointments during proposed leave", async () => {
-    const preview = await apiClient.previewDoctorLeave("doc-001-rajesh", {
-      starts_at: new Date(Date.now() - 1000).toISOString(),
-      ends_at: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-      reason: "Emergency surgical conference",
-    });
-
-    expect(preview).toBeDefined();
-    expect(preview.preview_token).toMatch(/^prev-/);
-    expect(preview.doctor_id).toBe("doc-001-rajesh");
-    expect(preview.schedule_version).toBeDefined();
-    expect(Array.isArray(preview.affected_appointments)).toBe(true);
+describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBOX-001..003, DATA-001)", () => {
+  beforeEach(() => {
+    apiClient.reset();
   });
 
-  it("atomically applies leave, transitions overlapping confirmed appointments, and generates both email and calendar outbox integrations", async () => {
-    const startsAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
-    const endsAt = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
+  it("valid preview and apply: generates preview, validates version, cancels confirmed appointments, creates dual pending outbox items, and increments doctor schedule version", async () => {
+    // Current doctor state before leave
+    const initialDoc = await apiClient.getDoctorDetail("doc-001-rajesh");
+    const initialVersion = initialDoc.schedule_version || 1;
+
+    // Guaranteed overlapping range covering apt-001-upcoming and apt-002-today-doctor
+    const startsAt = new Date(Date.now() - 3600 * 1000).toISOString();
+    const endsAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+    const reason = "Specialist Cardiology Conference in Geneva";
+
+    // Create an active hold in this window to verify hold release
+    const hold = await apiClient.createHold({
+      doctor_id: "doc-001-rajesh",
+      starts_at: new Date(Date.now() + 6 * 3600 * 1000).toISOString(),
+      duration_minutes: 30,
+    });
+    expect(hold.status).toBe("active");
+
+    // 1. Preview
     const preview = await apiClient.previewDoctorLeave("doc-001-rajesh", {
       starts_at: startsAt,
       ends_at: endsAt,
-      reason: "Annual sabbatical",
+      reason,
     });
 
+    expect(preview.preview_token).toMatch(/^prev-/);
+    expect(preview.doctor_id).toBe("doc-001-rajesh");
+    expect(preview.starts_at).toBe(startsAt);
+    expect(preview.ends_at).toBe(endsAt);
+    expect(preview.reason).toBe(reason);
+    expect(preview.schedule_version).toBe(initialVersion);
+    expect(preview.affected_holds_count).toBeGreaterThanOrEqual(1);
+
+    // Guaranteed affected confirmed appointments
+    expect(preview.affected_appointments.length).toBeGreaterThan(0);
+    const affectedIds = preview.affected_appointments.map((a) => a.id);
+    expect(affectedIds).toContain("apt-001-upcoming");
+    expect(affectedIds).toContain("apt-002-today-doctor");
+
+    // 2. Apply with LeaveApplyRequest containing preview_token and expected_schedule_version
     const createdLeave = await apiClient.applyDoctorLeave(
       preview.doctor_id,
       preview.starts_at,
       preview.ends_at,
-      "Annual sabbatical",
-      preview.preview_token
+      preview.reason,
+      {
+        preview_token: preview.preview_token,
+        expected_schedule_version: preview.schedule_version,
+      }
     );
 
     expect(createdLeave).toBeDefined();
     expect(createdLeave.doctor_id).toBe("doc-001-rajesh");
-    expect(createdLeave.reason).toBe("Annual sabbatical");
+    expect(createdLeave.reason).toBe(reason);
 
-    // Verify leave is in doctor leaves list
-    const leaves = await apiClient.getDoctorLeaves("doc-001-rajesh");
-    const found = leaves.find((l) => l.id === createdLeave.id);
-    expect(found).toBeDefined();
+    // 3. Verify Doctor schedule version incremented
+    const updatedDoc = await apiClient.getDoctorDetail("doc-001-rajesh");
+    expect(updatedDoc.schedule_version).toBe(initialVersion + 1);
 
-    // Verify both email and calendar follow-up outbox tasks were generated for affected appointments
+    // 4. Verify Active Hold was released
+    const updatedHold = await apiClient.getHold(hold.id);
+    expect(updatedHold.status).toBe("released");
+
+    // 5. Verify Only Confirmed appointments transitioned to cancelled_doctor_leave
+    const apt1 = await apiClient.getAppointmentDetail("apt-001-upcoming");
+    expect(apt1.status).toBe("cancelled_doctor_leave");
+    expect(apt1.cancelled_by).toBe("admin_leave_manager");
+    expect(apt1.cancellation_reason).toContain(reason);
+
+    const apt2 = await apiClient.getAppointmentDetail("apt-002-today-doctor");
+    expect(apt2.status).toBe("cancelled_doctor_leave");
+
+    // Verify non-confirmed overlapping appointments remained unchanged
+    const inProgApt = await apiClient.getAppointmentDetail("apt-005-in-progress");
+    expect(inProgApt.status).toBe("in_progress");
+
+    const completedApt = await apiClient.getAppointmentDetail("apt-006-completed-doc1");
+    expect(completedApt.status).toBe("completed");
+
+    const cancelledApt = await apiClient.getAppointmentDetail("apt-007-cancelled-patient");
+    expect(cancelledApt.status).toBe("cancelled_patient");
+
+    // 6. Verify Outbox Records: exactly 1 pending email and 1 pending calendar per cancelled appointment
     const integrations = await apiClient.getAdminIntegrations();
-    if (preview.affected_appointments.length > 0) {
-      for (const apt of preview.affected_appointments) {
-        const emailTask = integrations.find(
-          (i) => i.target_id === apt.id && i.channel === "email"
-        );
-        const calTask = integrations.find(
-          (i) => i.target_id === apt.id && i.channel === "calendar"
-        );
-        expect(emailTask).toBeDefined();
-        expect(calTask).toBeDefined();
-      }
+    for (const aptId of affectedIds) {
+      const emailTasks = integrations.filter(
+        (i) => i.target_id === aptId && i.channel === "email" && i.state === "pending"
+      );
+      const calTasks = integrations.filter(
+        (i) => i.target_id === aptId && i.channel === "calendar" && i.state === "pending"
+      );
+
+      expect(emailTasks.length).toBe(1);
+      expect(calTasks.length).toBe(1);
+
+      const emailTask = emailTasks[0];
+      const calTask = calTasks[0];
+
+      // Must be pending, attempt_count 0, last_attempt_at not set
+      expect(emailTask.state).toBe("pending");
+      expect(emailTask.attempt_count).toBe(0);
+      expect(emailTask.last_attempt_at).toBeUndefined();
+      expect(emailTask.payload_summary).not.toContain("Aarav");
+      expect(emailTask.payload_summary).not.toContain("Priya");
+      expect(emailTask.payload_summary).toBe("Doctor-leave appointment cancellation notification queued.");
+
+      expect(calTask.state).toBe("pending");
+      expect(calTask.attempt_count).toBe(0);
+      expect(calTask.last_attempt_at).toBeUndefined();
+      expect(calTask.payload_summary).not.toContain("Aarav");
+      expect(calTask.payload_summary).not.toContain("Priya");
+      expect(calTask.payload_summary).toBe("Doctor-leave appointment cancellation notification queued.");
     }
   });
 
-  it("rejects invalid, reused, or mismatched preview tokens with LEAVE_PREVIEW_STALE and applies no mutation", async () => {
-    const startsAt = new Date(Date.now() + 120 * 3600 * 1000).toISOString();
-    const endsAt = new Date(Date.now() + 144 * 3600 * 1000).toISOString();
+  it("rejects application with missing or nonexistent preview token with status 409 LEAVE_PREVIEW_STALE and zero mutation", async () => {
+    const leavesBefore = await apiClient.getDoctorLeaves("doc-001-rajesh");
+    const docBefore = await apiClient.getDoctorDetail("doc-001-rajesh");
+
+    let err: { status?: number; error?: { code?: string } } | null = null;
+    try {
+      await apiClient.applyDoctorLeave(
+        "doc-001-rajesh",
+        new Date().toISOString(),
+        new Date(Date.now() + 3600 * 1000).toISOString(),
+        "Nonexistent token leave",
+        {
+          preview_token: "prev-nonexistent-token-12345",
+          expected_schedule_version: 1,
+        }
+      );
+    } catch (e: unknown) {
+      err = e as { status?: number; error?: { code?: string } };
+    }
+
+    expect(err).toBeDefined();
+    expect(err?.status).toBe(409);
+    expect(err?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+
+    // Zero mutation check
+    const leavesAfter = await apiClient.getDoctorLeaves("doc-001-rajesh");
+    const docAfter = await apiClient.getDoctorDetail("doc-001-rajesh");
+    expect(leavesAfter.length).toBe(leavesBefore.length);
+    expect(docAfter.schedule_version).toBe(docBefore.schedule_version);
+  });
+
+  it("rejects reused preview token with status 409 LEAVE_PREVIEW_STALE and zero subsequent mutation", async () => {
+    const startsAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+    const endsAt = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
+    const reason = "Sabbatical leave";
 
     const preview = await apiClient.previewDoctorLeave("doc-001-rajesh", {
       starts_at: startsAt,
       ends_at: endsAt,
-      reason: "Regional symposium",
+      reason,
     });
 
-    // 1. First application succeeds and consumes the token
+    // 1st application succeeds
     await apiClient.applyDoctorLeave(
       preview.doctor_id,
       preview.starts_at,
       preview.ends_at,
-      "Regional symposium",
-      preview.preview_token
+      reason,
+      {
+        preview_token: preview.preview_token,
+        expected_schedule_version: preview.schedule_version,
+      }
     );
 
-    // 2. Replay with the same token must fail with LEAVE_PREVIEW_STALE
-    let replayError: { status?: number; error?: { code?: string } } | null = null;
+    const leavesAfterFirst = await apiClient.getDoctorLeaves("doc-001-rajesh");
+    const docAfterFirst = await apiClient.getDoctorDetail("doc-001-rajesh");
+
+    // 2nd application with same token must fail
+    let replayErr: { status?: number; error?: { code?: string } } | null = null;
     try {
       await apiClient.applyDoctorLeave(
         preview.doctor_id,
         preview.starts_at,
         preview.ends_at,
-        "Regional symposium",
-        preview.preview_token
+        reason,
+        {
+          preview_token: preview.preview_token,
+          expected_schedule_version: preview.schedule_version,
+        }
       );
-    } catch (err: unknown) {
-      replayError = err as { status?: number; error?: { code?: string } };
+    } catch (e: unknown) {
+      replayErr = e as { status?: number; error?: { code?: string } };
     }
 
-    expect(replayError).toBeDefined();
-    expect(replayError?.status).toBe(409);
-    expect(replayError?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+    expect(replayErr).toBeDefined();
+    expect(replayErr?.status).toBe(409);
+    expect(replayErr?.error?.code).toBe("LEAVE_PREVIEW_STALE");
 
-    // 3. Application with mismatched parameters must fail with LEAVE_PREVIEW_STALE
-    const freshPreview = await apiClient.previewDoctorLeave("doc-001-rajesh", {
-      starts_at: new Date(Date.now() + 200 * 3600 * 1000).toISOString(),
-      ends_at: new Date(Date.now() + 224 * 3600 * 1000).toISOString(),
+    // Zero mutation check
+    const leavesAfterSecond = await apiClient.getDoctorLeaves("doc-001-rajesh");
+    const docAfterSecond = await apiClient.getDoctorDetail("doc-001-rajesh");
+    expect(leavesAfterSecond.length).toBe(leavesAfterFirst.length);
+    expect(docAfterSecond.schedule_version).toBe(docAfterFirst.schedule_version);
+  });
+
+  it("rejects expired preview token after 15 minutes TTL using controlled Date.now spy", async () => {
+    const realNow = Date.now();
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(realNow);
+
+    const startsAt = new Date(realNow + 48 * 3600 * 1000).toISOString();
+    const endsAt = new Date(realNow + 72 * 3600 * 1000).toISOString();
+    const reason = "Conference leave";
+
+    const preview = await apiClient.previewDoctorLeave("doc-001-rajesh", {
+      starts_at: startsAt,
+      ends_at: endsAt,
+      reason,
+    });
+
+    // Advance mock Date.now by 16 minutes (beyond 15-minute TTL)
+    nowSpy.mockReturnValue(realNow + 16 * 60 * 1000);
+
+    let expiredErr: { status?: number; error?: { code?: string } } | null = null;
+    try {
+      await apiClient.applyDoctorLeave(
+        preview.doctor_id,
+        preview.starts_at,
+        preview.ends_at,
+        reason,
+        {
+          preview_token: preview.preview_token,
+          expected_schedule_version: preview.schedule_version,
+        }
+      );
+    } catch (e: unknown) {
+      expiredErr = e as { status?: number; error?: { code?: string } };
+    }
+
+    expect(expiredErr).toBeDefined();
+    expect(expiredErr?.status).toBe(409);
+    expect(expiredErr?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+
+    nowSpy.mockRestore();
+  });
+
+  it("rejects mismatched doctor_id with LEAVE_PREVIEW_STALE and zero mutation", async () => {
+    const preview = await apiClient.previewDoctorLeave("doc-001-rajesh", {
+      starts_at: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      ends_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
       reason: "Research workshop",
     });
 
-    let mismatchError: { status?: number; error?: { code?: string } } | null = null;
+    let err: { status?: number; error?: { code?: string } } | null = null;
     try {
       await apiClient.applyDoctorLeave(
-        "doc-002-priya", // Mismatched doctor ID
-        freshPreview.starts_at,
-        freshPreview.ends_at,
-        "Research workshop",
-        freshPreview.preview_token
+        "doc-002-ananya", // Mismatched doctor
+        preview.starts_at,
+        preview.ends_at,
+        preview.reason,
+        {
+          preview_token: preview.preview_token,
+          expected_schedule_version: preview.schedule_version,
+        }
       );
-    } catch (err: unknown) {
-      mismatchError = err as { status?: number; error?: { code?: string } };
+    } catch (e: unknown) {
+      err = e as { status?: number; error?: { code?: string } };
     }
 
-    expect(mismatchError).toBeDefined();
-    expect(mismatchError?.status).toBe(409);
-    expect(mismatchError?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+    expect(err).toBeDefined();
+    expect(err?.status).toBe(409);
+    expect(err?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+  });
+
+  it("rejects mismatched start time with LEAVE_PREVIEW_STALE and zero mutation", async () => {
+    const preview = await apiClient.previewDoctorLeave("doc-001-rajesh", {
+      starts_at: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      ends_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
+      reason: "Research workshop",
+    });
+
+    let err: { status?: number; error?: { code?: string } } | null = null;
+    try {
+      await apiClient.applyDoctorLeave(
+        preview.doctor_id,
+        new Date(Date.now() + 50 * 3600 * 1000).toISOString(), // Mismatched starts_at
+        preview.ends_at,
+        preview.reason,
+        {
+          preview_token: preview.preview_token,
+          expected_schedule_version: preview.schedule_version,
+        }
+      );
+    } catch (e: unknown) {
+      err = e as { status?: number; error?: { code?: string } };
+    }
+
+    expect(err).toBeDefined();
+    expect(err?.status).toBe(409);
+    expect(err?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+  });
+
+  it("rejects mismatched end time with LEAVE_PREVIEW_STALE and zero mutation", async () => {
+    const preview = await apiClient.previewDoctorLeave("doc-001-rajesh", {
+      starts_at: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      ends_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
+      reason: "Research workshop",
+    });
+
+    let err: { status?: number; error?: { code?: string } } | null = null;
+    try {
+      await apiClient.applyDoctorLeave(
+        preview.doctor_id,
+        preview.starts_at,
+        new Date(Date.now() + 80 * 3600 * 1000).toISOString(), // Mismatched ends_at
+        preview.reason,
+        {
+          preview_token: preview.preview_token,
+          expected_schedule_version: preview.schedule_version,
+        }
+      );
+    } catch (e: unknown) {
+      err = e as { status?: number; error?: { code?: string } };
+    }
+
+    expect(err).toBeDefined();
+    expect(err?.status).toBe(409);
+    expect(err?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+  });
+
+  it("rejects mismatched reason with LEAVE_PREVIEW_STALE and zero mutation", async () => {
+    const preview = await apiClient.previewDoctorLeave("doc-001-rajesh", {
+      starts_at: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      ends_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
+      reason: "Original reason",
+    });
+
+    let err: { status?: number; error?: { code?: string } } | null = null;
+    try {
+      await apiClient.applyDoctorLeave(
+        preview.doctor_id,
+        preview.starts_at,
+        preview.ends_at,
+        "Changed reason without regenerating preview", // Mismatched reason
+        {
+          preview_token: preview.preview_token,
+          expected_schedule_version: preview.schedule_version,
+        }
+      );
+    } catch (e: unknown) {
+      err = e as { status?: number; error?: { code?: string } };
+    }
+
+    expect(err).toBeDefined();
+    expect(err?.status).toBe(409);
+    expect(err?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+  });
+
+  it("rejects mismatched expected_schedule_version with LEAVE_PREVIEW_STALE and zero mutation", async () => {
+    const preview = await apiClient.previewDoctorLeave("doc-001-rajesh", {
+      starts_at: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      ends_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
+      reason: "Annual retreat",
+    });
+
+    let err: { status?: number; error?: { code?: string } } | null = null;
+    try {
+      await apiClient.applyDoctorLeave(
+        preview.doctor_id,
+        preview.starts_at,
+        preview.ends_at,
+        preview.reason,
+        {
+          preview_token: preview.preview_token,
+          expected_schedule_version: 999, // Mismatched schedule version
+        }
+      );
+    } catch (e: unknown) {
+      err = e as { status?: number; error?: { code?: string } };
+    }
+
+    expect(err).toBeDefined();
+    expect(err?.status).toBe(409);
+    expect(err?.error?.code).toBe("LEAVE_PREVIEW_STALE");
+  });
+
+  it("token becomes stale if doctor schedule version changes before application (concurrent modification)", async () => {
+    // Generate Preview A
+    const previewA = await apiClient.previewDoctorLeave("doc-001-rajesh", {
+      starts_at: new Date(Date.now() + 100 * 3600 * 1000).toISOString(),
+      ends_at: new Date(Date.now() + 120 * 3600 * 1000).toISOString(),
+      reason: "Leave A",
+    });
+
+    // An intervening leave operation is committed, bumping doc-001 schedule version
+    const previewIntervening = await apiClient.previewDoctorLeave("doc-001-rajesh", {
+      starts_at: new Date(Date.now() + 200 * 3600 * 1000).toISOString(),
+      ends_at: new Date(Date.now() + 220 * 3600 * 1000).toISOString(),
+      reason: "Intervening leave",
+    });
+
+    await apiClient.applyDoctorLeave(
+      previewIntervening.doctor_id,
+      previewIntervening.starts_at,
+      previewIntervening.ends_at,
+      previewIntervening.reason,
+      {
+        preview_token: previewIntervening.preview_token,
+        expected_schedule_version: previewIntervening.schedule_version,
+      }
+    );
+
+    // Now applying Preview A must fail because doctor's current schedule version changed
+    let staleErr: { status?: number; error?: { code?: string } } | null = null;
+    try {
+      await apiClient.applyDoctorLeave(
+        previewA.doctor_id,
+        previewA.starts_at,
+        previewA.ends_at,
+        previewA.reason,
+        {
+          preview_token: previewA.preview_token,
+          expected_schedule_version: previewA.schedule_version,
+        }
+      );
+    } catch (e: unknown) {
+      staleErr = e as { status?: number; error?: { code?: string } };
+    }
+
+    expect(staleErr).toBeDefined();
+    expect(staleErr?.status).toBe(409);
+    expect(staleErr?.error?.code).toBe("LEAVE_PREVIEW_STALE");
   });
 });

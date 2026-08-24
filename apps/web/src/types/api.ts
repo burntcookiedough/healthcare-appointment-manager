@@ -52,6 +52,7 @@ export interface DoctorSummary {
   experience_years: number;
   consultation_fee: number;
   is_active: boolean;
+  schedule_version: number;
 }
 
 export interface DoctorDetail extends DoctorSummary {
@@ -239,6 +240,7 @@ export interface LeavePreviewResponse {
   doctor_id: string;
   starts_at: string;
   ends_at: string;
+  reason: string;
   affected_holds_count: number;
   affected_appointments: AppointmentSummary[];
   schedule_version: number;

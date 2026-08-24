@@ -81,7 +81,7 @@ export default function DoctorDiscoveryPage() {
                 type="button"
                 onClick={() => setSelectedSpecialty(spec)}
                 aria-pressed={isSelected}
-                className={`min-h-[44px] whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
+                className={`min-h-[44px] whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                   isSelected
                     ? "bg-[#111111] text-white"
                     : "border border-[#e7e7e2] bg-[#fbfbf8] text-[#626262] hover:border-[#111111]"
@@ -106,7 +106,7 @@ export default function DoctorDiscoveryPage() {
           {doctors.map((doc) => (
             <div
               key={doc.id}
-              className="flex flex-col justify-between rounded-3xl border border-[#e7e7e2] bg-white p-6 shadow-sm transition-all hover:border-[#111111] hover:shadow-lg space-y-5"
+              className="flex flex-col justify-between rounded-3xl border border-[#e7e7e2] bg-white p-5 sm:p-6 shadow-sm transition-colors duration-150 hover:border-[#111111] hover:shadow-lg space-y-5"
             >
               <div className="space-y-4">
                 {/* Doctor Avatar & Identity */}

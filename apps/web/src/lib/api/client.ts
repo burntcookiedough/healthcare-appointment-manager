@@ -24,10 +24,16 @@ import {
   DoctorLeave,
   LeavePreviewRequest,
   LeavePreviewResponse,
+  LeaveApplyRequest,
   AdminIntegrationItem,
 } from "@/types/api";
 
 export const apiClient = {
+  // Test isolation reset
+  reset: (): void => {
+    mockDb.reset();
+  },
+
   // Auth / Context
   getMe: async (): Promise<UserContext> => {
     return mockDb.getMe();
@@ -148,9 +154,17 @@ export const apiClient = {
     startsAt: string,
     endsAt: string,
     reason: string,
-    previewToken: string
+    reqOrToken: LeaveApplyRequest | string,
+    expectedScheduleVersion?: number
   ): Promise<DoctorLeave> => {
-    return mockDb.applyDoctorLeave(doctorId, startsAt, endsAt, reason, previewToken);
+    const req: LeaveApplyRequest =
+      typeof reqOrToken === "string"
+        ? {
+            preview_token: reqOrToken,
+            expected_schedule_version: expectedScheduleVersion ?? 1,
+          }
+        : reqOrToken;
+    return mockDb.applyDoctorLeave(doctorId, startsAt, endsAt, reason, req);
   },
 
   // Admin Integrations

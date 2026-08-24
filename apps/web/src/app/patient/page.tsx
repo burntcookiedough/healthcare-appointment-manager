@@ -99,14 +99,14 @@ export default function PatientDashboard() {
         {isApptsLoading ? (
           <CardSkeleton />
         ) : upcomingAppointment ? (
-          <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 sm:p-8 shadow-sm space-y-6">
+          <div className="rounded-3xl border border-[#e7e7e2] bg-white p-4 sm:p-6 lg:p-8 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#f0f0eb] pb-6">
               <div className="flex items-start sm:items-center gap-4">
                 <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#efff72] text-[#111111]">
                   <Stethoscope className="h-7 w-7" aria-hidden="true" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-xl font-bold text-[#111111]">
                       {upcomingAppointment.doctor_name}
                     </h3>
@@ -194,7 +194,7 @@ export default function PatientDashboard() {
             </Link>
           </div>
 
-          <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 shadow-sm space-y-3">
+          <div className="rounded-3xl border border-[#e7e7e2] bg-white p-4 sm:p-6 shadow-sm space-y-3">
             {isRemindersLoading ? (
               <div className="space-y-3">
                 <div className="h-14 bg-[#f0f0eb] rounded-xl animate-pulse" />
@@ -206,13 +206,13 @@ export default function PatientDashboard() {
                 return (
                   <div
                     key={rem.id}
-                    className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                    className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border transition-colors ${
                       isTaken
                         ? "border-[#bbf2cf] bg-[#edfdf4]"
                         : "border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111]"
                     }`}
                   >
-                    <div className="flex items-center gap-3.5">
+                    <div className="flex items-start sm:items-center gap-3.5">
                       <div
                         className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
                           isTaken ? "bg-[#26734d] text-white" : "bg-white text-[#111111] border border-[#e7e7e2]"
@@ -221,7 +221,7 @@ export default function PatientDashboard() {
                         <Pill className="h-5 w-5" />
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <h4 className="text-sm font-bold text-[#111111]">{rem.medication_name}</h4>
                           <span className="text-xs font-mono font-medium text-[#626262]">
                             {rem.dosage}
@@ -231,13 +231,13 @@ export default function PatientDashboard() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <span className="hidden sm:inline-block rounded-full bg-white border border-[#e7e7e2] px-2.5 py-1 text-xs font-mono font-semibold text-[#111111]">
+                    <div className="flex items-center gap-3 self-end sm:self-auto">
+                      <span className="rounded-full bg-white border border-[#e7e7e2] px-2.5 py-1 text-xs font-mono font-semibold text-[#111111]">
                         {rem.time_of_day}
                       </span>
                       <button
                         onClick={() => handleToggleDose(rem.id, rem.medication_name)}
-                        className={`h-9 px-3.5 rounded-full text-xs font-semibold transition-all ${
+                        className={`min-h-[44px] px-3.5 rounded-full text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                           isTaken
                             ? "bg-[#26734d] text-white"
                             : "border border-[#e7e7e2] bg-white text-[#111111] hover:bg-[#f0f0eb]"

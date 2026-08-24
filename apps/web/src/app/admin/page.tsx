@@ -76,17 +76,17 @@ export default function AdminOverviewPage() {
       {/* Metric Cards Row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Card 1: Doctors */}
-        <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 shadow-xs space-y-2">
+        <div className="rounded-3xl border border-[#e7e7e2] bg-white p-5 sm:p-6 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#8e8e89]">Total Doctors</span>
             <Users className="h-4 w-4 text-[#111111]" aria-hidden="true" />
           </div>
           <span className="text-3xl font-black text-[#111111] block">
-            {isDocsLoading ? "..." : isDocsError ? "—" : (doctors?.length ?? 0)}
+            {isDocsLoading ? "…" : isDocsError ? "—" : (doctors?.length ?? 0)}
           </span>
           <span className="text-[11px] font-semibold text-[#626262]">
             {isDocsLoading
-              ? "Loading roster..."
+              ? "Loading roster…"
               : isDocsError
               ? "Roster query failed"
               : `${doctors?.length || 0} active doctors`}
@@ -94,17 +94,17 @@ export default function AdminOverviewPage() {
         </div>
 
         {/* Card 2: Appointments */}
-        <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 shadow-xs space-y-2">
+        <div className="rounded-3xl border border-[#e7e7e2] bg-white p-5 sm:p-6 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#8e8e89]">Appointments Today</span>
             <Calendar className="h-4 w-4 text-[#111111]" aria-hidden="true" />
           </div>
           <span className="text-3xl font-black text-[#111111] block">
-            {isApptsLoading ? "..." : isApptsError ? "—" : (appointments?.length ?? 0)}
+            {isApptsLoading ? "…" : isApptsError ? "—" : (appointments?.length ?? 0)}
           </span>
           <span className="text-[11px] text-[#626262]">
             {isApptsLoading
-              ? "Loading appointments..."
+              ? "Loading appointments…"
               : isApptsError
               ? "Appointments unavailable"
               : "Across all specialties"}
@@ -112,17 +112,17 @@ export default function AdminOverviewPage() {
         </div>
 
         {/* Card 3: Integrations */}
-        <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 shadow-xs space-y-2">
+        <div className="rounded-3xl border border-[#e7e7e2] bg-white p-5 sm:p-6 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#8e8e89]">Integration Failures</span>
             <Layers className="h-4 w-4 text-[#b54708]" aria-hidden="true" />
           </div>
           <span className="text-3xl font-black text-[#b42318] block">
-            {isIntegrationsLoading ? "..." : isIntegrationsError ? "—" : failedIntegrations.length}
+            {isIntegrationsLoading ? "…" : isIntegrationsError ? "—" : failedIntegrations.length}
           </span>
           <span className="text-[11px] font-semibold text-[#626262]">
             {isIntegrationsLoading
-              ? "Checking outbox..."
+              ? "Checking outbox…"
               : isIntegrationsError
               ? "Integration status unavailable"
               : failedIntegrations.length > 0
@@ -132,17 +132,17 @@ export default function AdminOverviewPage() {
         </div>
 
         {/* Card 4: Leaves */}
-        <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 shadow-xs space-y-2">
+        <div className="rounded-3xl border border-[#e7e7e2] bg-white p-5 sm:p-6 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[#8e8e89]">Active Leaves</span>
             <CalendarOff className="h-4 w-4 text-[#111111]" aria-hidden="true" />
           </div>
           <span className="text-3xl font-black text-[#111111] block">
-            {isLeavesLoading ? "..." : isLeavesError ? "—" : (leaves?.length ?? 0)}
+            {isLeavesLoading ? "…" : isLeavesError ? "—" : (leaves?.length ?? 0)}
           </span>
           <span className="text-[11px] text-[#626262]">
             {isLeavesLoading
-              ? "Loading leave records..."
+              ? "Loading leave records…"
               : isLeavesError
               ? "Leave records unavailable"
               : "Approved doctor intervals"}
@@ -153,8 +153,8 @@ export default function AdminOverviewPage() {
       {/* Visual Charts Grid */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
         {/* Left Chart: Today's Consultation Volume */}
-        <div className="lg:col-span-8 rounded-3xl border border-[#e7e7e2] bg-white p-6 sm:p-8 shadow-sm space-y-6">
-          <div className="flex items-center justify-between border-b border-[#f0f0eb] pb-4">
+        <div className="lg:col-span-8 rounded-3xl border border-[#e7e7e2] bg-white p-4 sm:p-6 lg:p-8 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#f0f0eb] pb-4">
             <div>
               <h3 className="text-base font-bold text-[#111111]">
                 Today&apos;s Appointment Slot Distribution
@@ -163,7 +163,7 @@ export default function AdminOverviewPage() {
                 Confirmed vs In-Progress consultations across time windows
               </p>
             </div>
-            <div className="flex items-center gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-3 text-xs">
               <span className="flex items-center gap-1.5">
                 <span className="h-3 w-3 rounded-sm bg-[#111111]" />
                 <span>Confirmed</span>
@@ -197,7 +197,7 @@ export default function AdminOverviewPage() {
         </div>
 
         {/* Right Chart: Integration Outbox Sync Status */}
-        <div className="lg:col-span-4 rounded-3xl border border-[#e7e7e2] bg-white p-6 sm:p-8 shadow-sm space-y-6">
+        <div className="lg:col-span-4 rounded-3xl border border-[#e7e7e2] bg-white p-4 sm:p-6 lg:p-8 shadow-sm space-y-6">
           <div className="border-b border-[#f0f0eb] pb-4">
             <h3 className="text-base font-bold text-[#111111]">Outbox Health Ratio</h3>
             <p className="text-xs text-[#626262]">SendGrid, Google Calendar & LLM delivery</p>
@@ -261,7 +261,7 @@ export default function AdminOverviewPage() {
 
       {/* Quick Operations Callout Cards */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-        <div className="rounded-3xl border border-[#e7e7e2] bg-[#fbfbf8] p-6 space-y-4 hover:border-[#111111] transition-all">
+        <div className="rounded-3xl border border-[#e7e7e2] bg-[#fbfbf8] p-5 sm:p-6 space-y-4 hover:border-[#111111] transition-colors duration-150">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white border border-[#e7e7e2] text-[#111111]">
             <CalendarOff className="h-5 w-5" />
           </div>
@@ -272,14 +272,14 @@ export default function AdminOverviewPage() {
             </p>
           </div>
           <Link href="/admin/leave">
-            <Button variant="primary" size="sm">
+            <Button variant="primary" size="default">
               <span>Schedule & Preview Leave</span>
               <ArrowRight className="h-3.5 w-3.5 text-[#efff72]" />
             </Button>
           </Link>
         </div>
 
-        <div className="rounded-3xl border border-[#e7e7e2] bg-[#fbfbf8] p-6 space-y-4 hover:border-[#111111] transition-all">
+        <div className="rounded-3xl border border-[#e7e7e2] bg-[#fbfbf8] p-5 sm:p-6 space-y-4 hover:border-[#111111] transition-colors duration-150">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white border border-[#e7e7e2] text-[#111111]">
             <Layers className="h-5 w-5" />
           </div>
@@ -290,7 +290,7 @@ export default function AdminOverviewPage() {
             </p>
           </div>
           <Link href="/admin/integrations">
-            <Button variant="primary" size="sm">
+            <Button variant="primary" size="default">
               <span>Inspect & Retry Outbox</span>
               <ArrowRight className="h-3.5 w-3.5 text-[#efff72]" />
             </Button>

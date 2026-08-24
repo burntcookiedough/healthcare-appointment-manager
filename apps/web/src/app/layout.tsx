@@ -25,9 +25,15 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.variable}>
       <body className="flex min-h-screen flex-col bg-[#fbfbf8] text-[#111111] antialiased">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:rounded-xl focus:bg-[#111111] focus:px-4 focus:py-2.5 focus:text-xs focus:font-bold focus:text-[#efff72] focus:shadow-xl focus:outline-none focus:ring-2 focus:ring-[#efff72]"
+        >
+          Skip to main content
+        </a>
         <Providers>
           <Navbar />
-          <main className="flex-1">{children}</main>
+          <main id="main-content" className="flex-1">{children}</main>
           <Footer />
         </Providers>
       </body>

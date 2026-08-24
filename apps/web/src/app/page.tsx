@@ -175,7 +175,7 @@ export default function LandingPage() {
 
           <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
             {/* Patient Persona Card */}
-            <div className="group rounded-3xl border border-[#e7e7e2] bg-[#fbfbf8] p-6 transition-all hover:border-[#111111] hover:shadow-xl space-y-4">
+            <div className="group rounded-3xl border border-[#e7e7e2] bg-[#fbfbf8] p-5 sm:p-6 transition-colors duration-150 hover:border-[#111111] hover:shadow-xl space-y-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#edfdf4] text-[#26734d]">
                 <User className="h-6 w-6" />
               </div>
@@ -196,7 +196,7 @@ export default function LandingPage() {
             </div>
 
             {/* Doctor Persona Card */}
-            <div className="group rounded-3xl border border-[#e7e7e2] bg-[#fbfbf8] p-6 transition-all hover:border-[#111111] hover:shadow-xl space-y-4">
+            <div className="group rounded-3xl border border-[#e7e7e2] bg-[#fbfbf8] p-5 sm:p-6 transition-colors duration-150 hover:border-[#111111] hover:shadow-xl space-y-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#f6f6f2] text-[#111111]">
                 <Stethoscope className="h-6 w-6" />
               </div>
@@ -217,7 +217,7 @@ export default function LandingPage() {
             </div>
 
             {/* Admin Persona Card */}
-            <div className="group rounded-3xl border border-[#e7e7e2] bg-[#fbfbf8] p-6 transition-all hover:border-[#111111] hover:shadow-xl space-y-4">
+            <div className="group rounded-3xl border border-[#e7e7e2] bg-[#fbfbf8] p-5 sm:p-6 transition-colors duration-150 hover:border-[#111111] hover:shadow-xl space-y-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fff8eb] text-[#b54708]">
                 <ShieldCheck className="h-6 w-6" />
               </div>

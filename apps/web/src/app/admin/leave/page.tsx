@@ -87,7 +87,10 @@ export default function AdminLeavePage() {
         previewResult.starts_at,
         previewResult.ends_at,
         leaveReason,
-        previewResult.preview_token
+        {
+          preview_token: previewResult.preview_token,
+          expected_schedule_version: previewResult.schedule_version,
+        }
       );
     },
     onSuccess: (_newLeave) => {

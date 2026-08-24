@@ -64,7 +64,7 @@ export default function PatientPrescriptionsPage() {
               return (
                 <div
                   key={rem.id}
-                  className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl border transition-all ${
+                  className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl border transition-colors duration-150 ${
                     isTaken
                       ? "border-[#bbf2cf] bg-[#edfdf4]"
                       : "border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111]"
@@ -107,7 +107,7 @@ export default function PatientPrescriptionsPage() {
                       onClick={() => handleToggle(rem.id, rem.medication_name)}
                       aria-pressed={Boolean(isTaken)}
                       aria-label={`Mark ${rem.medication_name} dose as ${isTaken ? "taken" : "pending"}`}
-                      className={`min-h-[44px] px-4 rounded-full text-xs font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
+                      className={`min-h-[44px] px-4 rounded-full text-xs font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                         isTaken
                           ? "bg-[#26734d] text-white hover:bg-[#1e613f]"
                           : "border border-[#e7e7e2] bg-white text-[#111111] hover:bg-[#f0f0eb]"

@@ -72,10 +72,10 @@ export default function PatientAppointmentsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-[#e7e7e2] pb-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#e7e7e2] pb-3">
         <button
           onClick={() => setActiveTab("active")}
-          className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
+          className={`min-h-[44px] rounded-full px-4 py-2 text-xs font-bold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
             activeTab === "active"
               ? "bg-[#111111] text-white"
               : "text-[#626262] hover:bg-[#f0f0eb] hover:text-[#111111]"
@@ -85,7 +85,7 @@ export default function PatientAppointmentsPage() {
         </button>
         <button
           onClick={() => setActiveTab("past")}
-          className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
+          className={`min-h-[44px] rounded-full px-4 py-2 text-xs font-bold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
             activeTab === "past"
               ? "bg-[#111111] text-white"
               : "text-[#626262] hover:bg-[#f0f0eb] hover:text-[#111111]"
@@ -95,7 +95,7 @@ export default function PatientAppointmentsPage() {
         </button>
         <button
           onClick={() => setActiveTab("cancelled")}
-          className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
+          className={`min-h-[44px] rounded-full px-4 py-2 text-xs font-bold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
             activeTab === "cancelled"
               ? "bg-[#111111] text-white"
               : "text-[#626262] hover:bg-[#f0f0eb] hover:text-[#111111]"
@@ -116,7 +116,7 @@ export default function PatientAppointmentsPage() {
           {filteredAppointments.map((apt) => (
             <div
               key={apt.id}
-              className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 rounded-3xl border border-[#e7e7e2] bg-white p-6 shadow-sm hover:border-[#111111] transition-all"
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 rounded-3xl border border-[#e7e7e2] bg-white p-4 sm:p-6 shadow-sm hover:border-[#111111] transition-colors duration-150"
             >
               <div className="flex items-start gap-4">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#efff72] text-[#111111]">

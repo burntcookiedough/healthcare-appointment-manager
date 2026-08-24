@@ -99,7 +99,7 @@ export default function DoctorTimelinePage() {
             {todayAppointments.map((apt) => (
               <div
                 key={apt.id}
-                className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 p-5 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-all shadow-xs"
+                className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 p-4 sm:p-5 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-colors duration-150 shadow-xs"
               >
                 {/* Left: Time & Patient Identity */}
                 <div className="flex items-start gap-4">

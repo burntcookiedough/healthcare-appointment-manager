@@ -36,7 +36,7 @@ export default function LoginPage() {
           <button
             type="button"
             onClick={() => handleSelectRole("patient")}
-            className="flex min-h-[44px] w-full items-center justify-between p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-all text-left group focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111]"
+            className="flex min-h-[44px] w-full items-center justify-between p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-colors duration-150 text-left group focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111]"
           >
             <div className="flex items-center gap-3.5">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#edfdf4] text-[#26734d]">
@@ -47,13 +47,13 @@ export default function LoginPage() {
                 <div className="text-xs text-[#626262]">Patient Persona</div>
               </div>
             </div>
-            <ArrowRight className="h-4 w-4 text-[#8e8e89] group-hover:text-[#111111] group-hover:translate-x-0.5 transition-all" />
+            <ArrowRight className="h-4 w-4 text-[#8e8e89] group-hover:text-[#111111] group-hover:translate-x-0.5 transition-transform duration-150" />
           </button>
 
           <button
             type="button"
             onClick={() => handleSelectRole("doctor")}
-            className="flex min-h-[44px] w-full items-center justify-between p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-all text-left group focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111]"
+            className="flex min-h-[44px] w-full items-center justify-between p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-colors duration-150 text-left group focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111]"
           >
             <div className="flex items-center gap-3.5">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#f6f6f2] text-[#111111]">
@@ -64,13 +64,13 @@ export default function LoginPage() {
                 <div className="text-xs text-[#626262]">Doctor (Cardiology)</div>
               </div>
             </div>
-            <ArrowRight className="h-4 w-4 text-[#8e8e89] group-hover:text-[#111111] group-hover:translate-x-0.5 transition-all" />
+            <ArrowRight className="h-4 w-4 text-[#8e8e89] group-hover:text-[#111111] group-hover:translate-x-0.5 transition-transform duration-150" />
           </button>
 
           <button
             type="button"
             onClick={() => handleSelectRole("admin")}
-            className="flex min-h-[44px] w-full items-center justify-between p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-all text-left group focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111]"
+            className="flex min-h-[44px] w-full items-center justify-between p-4 rounded-2xl border border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111] hover:bg-white transition-colors duration-150 text-left group focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111]"
           >
             <div className="flex items-center gap-3.5">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fff8eb] text-[#b54708]">
@@ -81,7 +81,7 @@ export default function LoginPage() {
                 <div className="text-xs text-[#626262]">Administrator Persona</div>
               </div>
             </div>
-            <ArrowRight className="h-4 w-4 text-[#8e8e89] group-hover:text-[#111111] group-hover:translate-x-0.5 transition-all" />
+            <ArrowRight className="h-4 w-4 text-[#8e8e89] group-hover:text-[#111111] group-hover:translate-x-0.5 transition-transform duration-150" />
           </button>
         </div>
 

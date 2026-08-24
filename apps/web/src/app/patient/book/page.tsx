@@ -183,7 +183,7 @@ function BookingWizardContent() {
             return (
               <div key={item.step} className="flex items-center gap-2">
                 <div
-                  className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-all ${
+                  className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-colors duration-150 ${
                     isCompleted
                       ? "bg-[#26734d] text-white"
                       : isCurrent
@@ -209,7 +209,7 @@ function BookingWizardContent() {
 
       {/* STEP 1: Select Doctor (if not selected) */}
       {currentStep === 1 && (
-        <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 sm:p-8 shadow-sm space-y-6">
+        <div className="rounded-3xl border border-[#e7e7e2] bg-white p-4 sm:p-6 lg:p-8 shadow-sm space-y-6">
           <div>
             <h2 className="text-xl font-black text-[#111111]">Choose a Specialist</h2>
             <p className="text-xs text-[#626262] mt-1">Select the doctor you wish to consult with.</p>
@@ -226,7 +226,7 @@ function BookingWizardContent() {
                 }}
                 aria-pressed={selectedDoctorId === doc.id}
                 aria-label={`Select ${doc.name}, ${doc.specialization}`}
-                className={`p-4 rounded-2xl border text-left transition-all hover:border-[#111111] hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] focus-visible:outline-offset-2 ${
+                className={`p-4 rounded-2xl border text-left transition-colors duration-150 hover:border-[#111111] hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] focus-visible:outline-offset-2 ${
                   selectedDoctorId === doc.id ? "border-[#111111] bg-[#fbfbf8]" : "border-[#e7e7e2] bg-white"
                 }`}
               >
@@ -246,26 +246,32 @@ function BookingWizardContent() {
         </div>
       )}
 
-      {/* STEP 2: Pick Date & Slot */}
+      {/* STEP 2: Pick Date & Time Slot (Acquires 5-min server hold) */}
       {currentStep === 2 && selectedDoctor && (
-        <div className="rounded-3xl border border-[#e7e7e2] bg-white p-6 sm:p-8 shadow-sm space-y-6">
-          <div className="flex items-center justify-between border-b border-[#f0f0eb] pb-4">
+        <div className="rounded-3xl border border-[#e7e7e2] bg-white p-4 sm:p-6 lg:p-8 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#f0f0eb] pb-6">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#efff72] text-[#111111]" aria-hidden="true">
-                <Stethoscope className="h-5 w-5" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#efff72] text-[#111111]">
+                <Stethoscope className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-[#111111]">{selectedDoctor.name}</h3>
-                <p className="text-xs text-[#626262]">{selectedDoctor.specialization} • {formatCurrencyINR(selectedDoctor.consultation_fee)}</p>
+                <h2 className="text-xl font-bold text-[#111111]">{selectedDoctor.name}</h2>
+                <p className="text-xs font-medium text-[#626262]">
+                  {selectedDoctor.specialization} • {selectedDoctor.experience_years} yrs exp •{" "}
+                  {formatCurrencyINR(selectedDoctor.consultation_fee)}
+                </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setCurrentStep(1)}
-              className="flex min-h-[44px] items-center px-3 py-2 text-xs font-semibold text-[#626262] hover:text-[#111111] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] rounded-lg"
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSelectedDoctorId("");
+                setCurrentStep(1);
+              }}
             >
               Change Doctor
-            </button>
+            </Button>
           </div>
 
           {/* Date Selector */}
@@ -284,7 +290,7 @@ function BookingWizardContent() {
                     onClick={() => setSelectedDate(d)}
                     aria-pressed={isSelected}
                     aria-label={`Date: ${formatDate(d, "EEE, d MMM")}`}
-                    className={`flex flex-col items-center justify-center min-h-[44px] min-w-[85px] p-3 rounded-2xl border transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
+                    className={`flex flex-col items-center justify-center min-h-[44px] min-w-[85px] p-3 rounded-2xl border transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                       isSelected
                         ? "border-[#111111] bg-[#111111] text-white"
                         : "border-[#e7e7e2] bg-[#fbfbf8] hover:border-[#111111]"
@@ -324,7 +330,7 @@ function BookingWizardContent() {
                     aria-label={`${formatSlotRange(slot.starts_at, slot.ends_at)}, ${
                       slot.available ? "Available for hold reservation" : slot.conflict_reason || "Unavailable"
                     }`}
-                    className={`flex flex-col items-center justify-center min-h-[44px] p-3.5 rounded-xl border text-center transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
+                    className={`flex flex-col items-center justify-center min-h-[44px] p-3.5 rounded-xl border text-center transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                       slot.available
                         ? "border-[#e7e7e2] bg-white hover:border-[#111111] hover:bg-[#efff72]/20 active:scale-98 cursor-pointer"
                         : "border-[#f0f0eb] bg-[#f6f6f2] text-[#8e8e89] cursor-not-allowed opacity-60"

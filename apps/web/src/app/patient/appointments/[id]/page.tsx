@@ -331,7 +331,7 @@ export default function PatientAppointmentDetailPage() {
                         setRescheduleDate(d);
                         setRescheduleSlot(null);
                       }}
-                      className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                      className={`min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-semibold border transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                         isSel
                           ? "bg-[#111111] text-white border-[#111111]"
                           : "bg-white text-[#111111] border-[#e7e7e2] hover:border-[#111111]"
@@ -365,7 +365,7 @@ export default function PatientAppointmentDetailPage() {
                           key={idx}
                           type="button"
                           onClick={() => setRescheduleSlot(s.starts_at)}
-                          className={`p-2.5 rounded-xl text-xs font-bold border text-center transition-all ${
+                          className={`min-h-[44px] p-2.5 rounded-xl text-xs font-bold border text-center transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                             isChosen
                               ? "bg-[#efff72] text-[#111111] border-[#d6ea39]"
                               : "bg-white text-[#111111] border-[#e7e7e2] hover:border-[#111111]"

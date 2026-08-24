@@ -1,9 +1,11 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import AdminOverviewPage from "@/app/admin/page";
 import PatientBookPage from "@/app/patient/book/page";
+import { ScenarioSwitcher } from "@/components/dev/ScenarioSwitcher";
 import { scenarioManager } from "@/mocks/scenarios";
 import { apiClient } from "@/lib/api/client";
 
@@ -19,6 +21,11 @@ function createTestQueryClient() {
 }
 
 describe("Frontend Acceptance Contracts & Regression Suite (UI_SPEC.md, ACCEPTANCE_TESTS.md)", () => {
+  beforeEach(() => {
+    apiClient.reset();
+    scenarioManager.setScenario("normal");
+  });
+
   describe("Admin KPI Error State Honesty (AT-UI-004)", () => {
     it("renders explicit error indicators (—) rather than hard-coded healthy operational values when data queries fail", async () => {
       // Mock apiClient methods to simulate a server/network outage
@@ -53,27 +60,37 @@ describe("Frontend Acceptance Contracts & Regression Suite (UI_SPEC.md, ACCEPTAN
     });
   });
 
-  describe("Scenario Switcher Data Refetch Governance", () => {
-    it("notifies registered scenario subscribers when scenario changes", () => {
-      const listener = vi.fn();
-      const unsubscribe = scenarioManager.subscribe(listener);
+  describe("Scenario Switcher Data Refetch Governance (Requirement 3)", () => {
+    it("executes exactly one invalidation path on scenario change without duplicate calls", async () => {
+      const user = userEvent.setup();
+      const queryClient = createTestQueryClient();
+      const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
 
-      expect(scenarioManager.getScenario()).toBe("normal");
-      scenarioManager.setScenario("request_error");
+      render(
+        <QueryClientProvider client={queryClient}>
+          <ScenarioSwitcher />
+        </QueryClientProvider>
+      );
 
-      expect(listener).toHaveBeenCalledWith("request_error");
-      expect(scenarioManager.getScenario()).toBe("request_error");
+      // Open switcher dialog
+      const toggleButton = screen.getByRole("button", { name: /Toggle menu/i });
+      await user.click(toggleButton);
 
-      // Reset to normal
-      scenarioManager.setScenario("normal");
-      expect(listener).toHaveBeenCalledWith("normal");
+      // Select 'Loading Delay' scenario
+      const scenarioOption = screen.getByRole("button", { name: /loading delay/i });
+      await user.click(scenarioOption);
 
-      unsubscribe();
+      // Verify queryClient.invalidateQueries was called exactly once
+      expect(invalidateQueriesSpy).toHaveBeenCalledTimes(1);
+      expect(scenarioManager.getScenario()).toBe("loading");
+
+      invalidateQueriesSpy.mockRestore();
     });
   });
 
-  describe("Doctor Selection Keyboard Accessibility (AT-UI-001)", () => {
-    it("renders doctor cards as semantic <button> elements accessible via keyboard Space and Enter", async () => {
+  describe("Doctor Selection Keyboard Accessibility (AT-UI-001, Requirement 4)", () => {
+    it("selects doctor via keyboard {Enter} key with genuine userEvent", async () => {
+      const user = userEvent.setup();
       const queryClient = createTestQueryClient();
 
       render(
@@ -82,16 +99,41 @@ describe("Frontend Acceptance Contracts & Regression Suite (UI_SPEC.md, ACCEPTAN
         </QueryClientProvider>
       );
 
-      // Await async doctor loading
       const doctorButton = await screen.findByRole("button", { name: /Select Dr\. Rajesh Verma/i });
       expect(doctorButton).toBeInTheDocument();
       expect(doctorButton.tagName.toLowerCase()).toBe("button");
-      expect(doctorButton).toHaveAttribute("aria-pressed");
 
-      // Press Enter/Click to select doctor
-      fireEvent.click(doctorButton);
+      // Focus and press {Enter}
+      doctorButton.focus();
+      expect(doctorButton).toHaveFocus();
+      await user.keyboard("{Enter}");
 
-      // Step 2 should now be visible with date & slot selection
+      // Step 2 should now be visible
+      await waitFor(() => {
+        expect(screen.getByText("Consultation Date")).toBeInTheDocument();
+        expect(screen.getByText("Change Doctor")).toBeInTheDocument();
+      });
+    });
+
+    it("selects doctor via keyboard {Space} key with genuine userEvent", async () => {
+      const user = userEvent.setup();
+      const queryClient = createTestQueryClient();
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <PatientBookPage />
+        </QueryClientProvider>
+      );
+
+      const doctorButton = await screen.findByRole("button", { name: /Select Dr\. Rajesh Verma/i });
+      expect(doctorButton).toBeInTheDocument();
+
+      // Focus and press {Space}
+      doctorButton.focus();
+      expect(doctorButton).toHaveFocus();
+      await user.keyboard(" ");
+
+      // Step 2 should now be visible
       await waitFor(() => {
         expect(screen.getByText("Consultation Date")).toBeInTheDocument();
         expect(screen.getByText("Change Doctor")).toBeInTheDocument();

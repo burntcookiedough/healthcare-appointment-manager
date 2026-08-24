@@ -147,12 +147,12 @@ export default function DoctorDetailPage() {
           <label className="text-xs font-bold uppercase tracking-wider text-[#8e8e89] block">
             Duration
           </label>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {DURATION_OPTIONS.map((dur) => (
               <button
                 key={dur}
                 onClick={() => setSelectedDuration(dur)}
-                className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all ${
+                className={`min-h-[44px] rounded-full px-4 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                   selectedDuration === dur
                     ? "bg-[#111111] text-white"
                     : "border border-[#e7e7e2] bg-[#fbfbf8] text-[#626262] hover:border-[#111111]"
@@ -177,7 +177,7 @@ export default function DoctorDetailPage() {
                 <button
                   key={index}
                   onClick={() => setSelectedDate(d)}
-                  className={`flex flex-col items-center justify-center min-w-[90px] p-3 rounded-2xl border transition-all ${
+                  className={`flex flex-col items-center justify-center min-h-[44px] min-w-[90px] p-3 rounded-2xl border transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                     isSelected
                       ? "border-[#111111] bg-[#111111] text-white shadow-sm"
                       : "border-[#e7e7e2] bg-[#fbfbf8] text-[#111111] hover:border-[#111111]"
@@ -220,7 +220,7 @@ export default function DoctorDetailPage() {
                         )}&duration=${selectedDuration}`
                       );
                     }}
-                    className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${
+                    className={`flex flex-col items-center justify-center min-h-[44px] p-3 rounded-xl border text-center transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#111111] ${
                       slot.available
                         ? "border-[#e7e7e2] bg-white hover:border-[#111111] hover:bg-[#efff72]/20 active:scale-98 cursor-pointer"
                         : "border-[#f0f0eb] bg-[#f6f6f2] text-[#8e8e89] cursor-not-allowed opacity-60"

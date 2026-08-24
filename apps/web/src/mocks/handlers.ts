@@ -12,6 +12,7 @@ import {
   DoctorLeave,
   LeavePreviewRequest,
   LeavePreviewResponse,
+  LeaveApplyRequest,
   AdminIntegrationItem,
   Prescription,
   PrescriptionItem,
@@ -52,6 +53,26 @@ class MockDatabase {
     display_name: "Aarav Sharma",
     email: "aarav.sharma@example.in",
   };
+
+  public reset(): void {
+    this.patient = JSON.parse(JSON.stringify(MOCK_PATIENT));
+    this.doctors = JSON.parse(JSON.stringify(MOCK_DOCTORS));
+    this.appointments = JSON.parse(JSON.stringify(MOCK_APPOINTMENTS));
+    this.holds = new Map();
+    this.leavePreviewTokens = new Map();
+    this.visits = new Map([["vis-001-completed", JSON.parse(JSON.stringify(MOCK_VISIT))]]);
+    this.prescriptions = new Map([["rx-001-aarav", JSON.parse(JSON.stringify(MOCK_PRESCRIPTION))]]);
+    this.leaves = JSON.parse(JSON.stringify(MOCK_LEAVES));
+    this.integrations = JSON.parse(JSON.stringify(MOCK_ADMIN_INTEGRATIONS));
+    this.activeUser = {
+      subject_id: "usr-sub-pat-001",
+      role: "patient",
+      available_roles: ["patient", "doctor", "admin"],
+      profile_id: "pat-001-aarav",
+      display_name: "Aarav Sharma",
+      email: "aarav.sharma@example.in",
+    };
+  }
 
   private async simulateNetwork(): Promise<void> {
     const scenario = scenarioManager.getScenario();
@@ -160,6 +181,7 @@ class MockDatabase {
         experience_years: d.experience_years,
         consultation_fee: d.consultation_fee,
         is_active: d.is_active,
+        schedule_version: d.schedule_version,
       }));
   }
 
@@ -272,7 +294,8 @@ class MockDatabase {
     }
 
     const slotStart = new Date(req.starts_at);
-    const slotEnd = new Date(slotStart.getTime() + req.duration_minutes * 60 * 1000);
+    const duration = req.duration_minutes || 30;
+    const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
 
     // Check conflicts (BOOK-002)
     const hasConflict = this.appointments.some((apt) => {
@@ -734,6 +757,12 @@ class MockDatabase {
 
     const lStart = new Date(req.starts_at);
     const lEnd = new Date(req.ends_at);
+    if (isNaN(lStart.getTime()) || isNaN(lEnd.getTime()) || lStart >= lEnd) {
+      throw {
+        status: 422,
+        error: { code: "INVALID_INTERVAL", message: "Leave start time must precede end time." },
+      };
+    }
 
     // Find affected active holds
     const affectedHolds = Array.from(this.holds.values()).filter((h) => {
@@ -742,19 +771,17 @@ class MockDatabase {
       return lStart < new Date(h.ends_at) && lEnd > new Date(h.starts_at);
     });
 
-    // Find affected confirmed appointments
+    // Find affected confirmed appointments ONLY (LEAVE-003: only confirmed are affected)
     const affectedAppointments = this.appointments.filter((apt) => {
       if (apt.doctor_id !== doctorId) return false;
-      if (["cancelled_patient", "cancelled_doctor", "cancelled_admin", "cancelled_doctor_leave"].includes(apt.status)) {
-        return false;
-      }
+      if (apt.status !== "confirmed") return false;
       return lStart < new Date(apt.ends_at) && lEnd > new Date(apt.starts_at);
     });
 
     const previewToken = `prev-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const scheduleVersion = 1;
+    const scheduleVersion = doc.schedule_version || 1;
 
-    // Store token for single-use enforcement (LEAVE-002)
+    // Store token for single-use enforcement and binding validation (LEAVE-002)
     this.leavePreviewTokens.set(previewToken, {
       doctor_id: doctorId,
       starts_at: req.starts_at,
@@ -769,6 +796,7 @@ class MockDatabase {
       doctor_id: doctorId,
       starts_at: req.starts_at,
       ends_at: req.ends_at,
+      reason: req.reason,
       affected_holds_count: affectedHolds.length,
       affected_appointments: affectedAppointments,
       schedule_version: scheduleVersion,
@@ -780,12 +808,12 @@ class MockDatabase {
     startsAt: string,
     endsAt: string,
     reason: string,
-    previewToken: string
+    req: LeaveApplyRequest
   ): Promise<DoctorLeave> {
     await this.simulateNetwork();
 
-    // Validate and consume preview token (LEAVE-002 single-use, 15-minute TTL)
-    const tokenMeta = this.leavePreviewTokens.get(previewToken);
+    // 1. Validate token existence
+    const tokenMeta = this.leavePreviewTokens.get(req.preview_token);
     if (!tokenMeta) {
       throw {
         status: 409,
@@ -797,9 +825,11 @@ class MockDatabase {
         },
       };
     }
+
+    // 2. Validate token expiry (15-minute TTL)
     const TOKEN_TTL_MS = 15 * 60 * 1000;
     if (Date.now() - tokenMeta.issued_at > TOKEN_TTL_MS) {
-      this.leavePreviewTokens.delete(previewToken);
+      this.leavePreviewTokens.delete(req.preview_token);
       throw {
         status: 409,
         error: {
@@ -810,97 +840,160 @@ class MockDatabase {
         },
       };
     }
-    if (
-      tokenMeta.doctor_id !== doctorId ||
-      tokenMeta.starts_at !== startsAt ||
-      tokenMeta.ends_at !== endsAt
-    ) {
-      this.leavePreviewTokens.delete(previewToken);
+
+    // 3. Validate doctor existence
+    const doc = this.doctors.find((d) => d.id === doctorId);
+    if (!doc) {
+      this.leavePreviewTokens.delete(req.preview_token);
+      throw {
+        status: 404,
+        error: { code: "RESOURCE_NOT_FOUND", message: "Doctor not found." },
+      };
+    }
+
+    // 4. Validate interval
+    const lStart = new Date(startsAt);
+    const lEnd = new Date(endsAt);
+    if (isNaN(lStart.getTime()) || isNaN(lEnd.getTime()) || lStart >= lEnd) {
+      this.leavePreviewTokens.delete(req.preview_token);
       throw {
         status: 409,
         error: {
           code: "LEAVE_PREVIEW_STALE",
-          message:
-            "The leave parameters do not match the preview token. Please generate a new impact preview.",
+          message: "Invalid leave interval parameters.",
           retryable: false,
         },
       };
     }
 
-    // Consume the token — single-use, delete before mutations (atomic integrity)
-    this.leavePreviewTokens.delete(previewToken);
+    // 5. Exact doctor/start/end/reason match AND schedule version match
+    const doctorCurrentScheduleVersion = doc.schedule_version || 1;
+    if (
+      tokenMeta.doctor_id !== doctorId ||
+      tokenMeta.starts_at !== startsAt ||
+      tokenMeta.ends_at !== endsAt ||
+      tokenMeta.reason !== reason ||
+      tokenMeta.schedule_version !== req.expected_schedule_version ||
+      doctorCurrentScheduleVersion !== req.expected_schedule_version
+    ) {
+      this.leavePreviewTokens.delete(req.preview_token);
+      throw {
+        status: 409,
+        error: {
+          code: "LEAVE_PREVIEW_STALE",
+          message:
+            "The leave parameters or schedule version do not match the current doctor schedule. Please generate a new impact preview.",
+          retryable: false,
+        },
+      };
+    }
 
-    const doc = this.doctors.find((d) => d.id === doctorId);
-    const lStart = new Date(startsAt);
-    const lEnd = new Date(endsAt);
-
-    // Invalidate affected active holds
+    // 6. Stage prospective changes
+    // Determine affected active holds
+    const affectedHolds: Hold[] = [];
     for (const hold of this.holds.values()) {
       if (hold.doctor_id === doctorId && hold.status === "active") {
-        if (lStart < new Date(hold.ends_at) && lEnd > new Date(hold.starts_at)) {
-          hold.status = "released";
-          hold.updated_at = new Date().toISOString();
+        if (new Date(hold.expires_at) > new Date() && lStart < new Date(hold.ends_at) && lEnd > new Date(hold.starts_at)) {
+          affectedHolds.push(hold);
         }
       }
     }
 
-    // Atomically cancel affected appointments as cancelled_doctor_leave (LEAVE-003)
+    // Determine affected confirmed appointments ONLY
+    const affectedConfirmedAppointments: AppointmentDetail[] = [];
     for (const apt of this.appointments) {
-      if (apt.doctor_id === doctorId) {
-        if (!["cancelled_patient", "cancelled_doctor", "cancelled_admin", "cancelled_doctor_leave"].includes(apt.status)) {
-          if (lStart < new Date(apt.ends_at) && lEnd > new Date(apt.starts_at)) {
-            apt.status = "cancelled_doctor_leave";
-            apt.cancellation_reason = `Doctor on approved leave: ${reason}`;
-            apt.cancelled_at = new Date().toISOString();
-            apt.cancelled_by = "admin_leave_manager";
-            apt.version += 1;
-            apt.updated_at = new Date().toISOString();
-
-            // Record outbox email notification event (AT-LEAVE-002)
-            this.integrations.unshift({
-              id: `int-leave-email-${Date.now()}-${apt.id}`,
-              operation_id: `op-leave-email-${apt.id}`,
-              channel: "email",
-              state: "succeeded",
-              target_id: apt.id,
-              target_type: "appointment",
-              attempt_count: 1,
-              max_attempts: 3,
-              created_at: new Date().toISOString(),
-              last_attempt_at: new Date().toISOString(),
-              payload_summary: `Cancellation notification sent to ${apt.patient_name} due to doctor leave`,
-            });
-
-            // Record outbox calendar cancellation event (AT-LEAVE-002)
-            this.integrations.unshift({
-              id: `int-leave-cal-${Date.now()}-${apt.id}`,
-              operation_id: `op-leave-cal-${apt.id}`,
-              channel: "calendar",
-              state: "succeeded",
-              target_id: apt.id,
-              target_type: "appointment",
-              attempt_count: 1,
-              max_attempts: 3,
-              created_at: new Date().toISOString(),
-              last_attempt_at: new Date().toISOString(),
-              payload_summary: `Calendar cancellation event synced for ${apt.patient_name}`,
-            });
-          }
+      if (apt.doctor_id === doctorId && apt.status === "confirmed") {
+        if (lStart < new Date(apt.ends_at) && lEnd > new Date(apt.starts_at)) {
+          affectedConfirmedAppointments.push(apt);
         }
       }
     }
 
+    // Construct integration outbox records (OUTBOX-001, OUTBOX-002, DATA-001)
+    const stagedIntegrations: AdminIntegrationItem[] = [];
+    const timestampISO = new Date().toISOString();
+    for (const apt of affectedConfirmedAppointments) {
+      // 1. Email notification intent
+      stagedIntegrations.push({
+        id: `int-leave-email-${apt.id}`,
+        operation_id: `op-leave-email-${apt.id}`,
+        channel: "email",
+        state: "pending",
+        target_id: apt.id,
+        target_type: "appointment",
+        attempt_count: 0,
+        max_attempts: 3,
+        created_at: timestampISO,
+        payload_summary: "Doctor-leave appointment cancellation notification queued.",
+      });
+
+      // 2. Calendar cancellation intent
+      stagedIntegrations.push({
+        id: `int-leave-cal-${apt.id}`,
+        operation_id: `op-leave-cal-${apt.id}`,
+        channel: "calendar",
+        state: "pending",
+        target_id: apt.id,
+        target_type: "appointment",
+        attempt_count: 0,
+        max_attempts: 3,
+        created_at: timestampISO,
+        payload_summary: "Doctor-leave appointment cancellation notification queued.",
+      });
+    }
+
+    // 7. Atomic Commit of all staged mutations
+    // Consume single-use token
+    this.leavePreviewTokens.delete(req.preview_token);
+
+    // Release affected active holds
+    for (const hold of affectedHolds) {
+      hold.status = "released";
+      hold.updated_at = timestampISO;
+    }
+
+    // Transition only confirmed appointments to cancelled_doctor_leave
+    for (const apt of affectedConfirmedAppointments) {
+      apt.status = "cancelled_doctor_leave";
+      apt.cancellation_reason = `Doctor on approved leave: ${reason}`;
+      apt.cancelled_at = timestampISO;
+      apt.cancelled_by = "admin_leave_manager";
+      apt.version += 1;
+      apt.updated_at = timestampISO;
+      apt.integrations.push(
+        {
+          id: `int-leave-email-${apt.id}`,
+          channel: "email",
+          state: "pending",
+          attempt_count: 0,
+        },
+        {
+          id: `int-leave-cal-${apt.id}`,
+          channel: "calendar",
+          state: "pending",
+          attempt_count: 0,
+        }
+      );
+    }
+
+    // Prepend new outbox integration records
+    this.integrations.unshift(...stagedIntegrations);
+
+    // Increment doctor's schedule version
+    doc.schedule_version = (doc.schedule_version || 1) + 1;
+
+    // Create doctor leave record
     const newLeave: DoctorLeave = {
       id: `leave-${Date.now()}`,
       doctor_id: doctorId,
-      doctor_name: doc?.name || "Doctor",
+      doctor_name: doc.name,
       starts_at: startsAt,
       ends_at: endsAt,
       reason,
-      created_at: new Date().toISOString(),
+      created_at: timestampISO,
     };
-
     this.leaves.unshift(newLeave);
+
     return { ...newLeave };
   }
 

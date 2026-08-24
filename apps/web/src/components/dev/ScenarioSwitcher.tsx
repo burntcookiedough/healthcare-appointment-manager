@@ -41,10 +41,6 @@ export function ScenarioSwitcher() {
   const handleSelect = (s: ScenarioType) => {
     scenarioManager.setScenario(s);
     setIsOpen(false);
-    // Invalidate queries immediately
-    queryClient.invalidateQueries();
-    // Dispatch custom DOM event
-    window.dispatchEvent(new Event("scenario-changed"));
   };
 
   return (

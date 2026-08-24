@@ -22,3 +22,19 @@ global.ResizeObserver = class ResizeObserver {
   unobserve() {}
   disconnect() {}
 };
+
+import * as React from "react";
+
+// Mock Recharts ResponsiveContainer for jsdom dimension calculation
+vi.mock("recharts", async (importOriginal) => {
+  const original = await importOriginal<Record<string, unknown>>();
+  return {
+    ...original,
+    ResponsiveContainer: ({ children }: { children: React.ReactNode }) =>
+      React.createElement(
+        "div",
+        { className: "recharts-responsive-container", style: { width: 500, height: 300 } },
+        children
+      ),
+  };
+});
