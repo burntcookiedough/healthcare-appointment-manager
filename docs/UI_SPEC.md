@@ -4,7 +4,7 @@
 
 Primary reference: [Assemble / Onsemble](https://www.onassemble.com/), inspected on 24 August 2026.
 
-The product should borrow its visual grammar, not copy its brand, assets, layout, or content. The healthcare application must remain clinically calm, accessible, and optimized for dense operational workflows.
+The product should borrow its visual grammar, not copy its brand, assets, layout, interaction sequences, or content. No third-party logo, illustration, copy, screenshot, font file, or other asset may be imported. The healthcare application must remain clinically calm, accessible, and optimized for dense operational workflows.
 
 ## Reference traits to carry forward
 
@@ -60,6 +60,17 @@ Clinical status colors must retain readable text contrast and must not rely on c
 - Application body: neutral, slightly softened, with tabular numerals for dates and times.
 - Doctor/admin tables prioritize scan speed over dramatic scale.
 
+Use no more than three deliberate type tiers within an application view: page title, section title, and body/control text. Avoid display-size headings inside tables, dialogs, and appointment workspaces.
+
+## Composition and hierarchy
+
+- Public and authentication pages may use an editorial split composition: concise copy and primary action on one side, an abstract scheduling preview on the other.
+- In-product pages use a stable role-aware shell, a clear page title and primary action, then one dominant work surface. Avoid a dashboard made from equally weighted cards.
+- Patient views may use wider spacing and a single prominent next action. Doctor and admin views compress spacing without reducing touch targets or focus clarity.
+- Reserve the lime accent for the current selection, a focus-adjacent highlight, or one primary emphasis per region. Do not use it as a large background or for clinical severity.
+- Use borders and whitespace before shadows. Apply `--shadow-panel` only to elevated or transient surfaces, not every card.
+- Use icons to reinforce visible labels, never as the only explanation for clinical or integration status.
+
 ## Motion and spatial depth
 
 Antigravity effects are allowed only where they improve orientation or delight without slowing care tasks:
@@ -80,6 +91,8 @@ All portals use the same typography, token set, controls, icon language, and spa
 - Admin: operational, table-driven, bulk-action aware.
 
 Desktop navigation uses a compact header or sidebar according to task density. Mobile navigation keeps the primary role actions within thumb reach.
+
+At desktop widths, keep the main reading measure comfortable while allowing doctor timelines and admin tables to use the available width. At tablet widths, secondary panels move below the primary task. At mobile widths, multi-column forms become one column, tables switch to labeled cards or horizontal containment only when comparison must be preserved, and primary actions remain reachable without covering content.
 
 ## Patient information architecture
 
@@ -118,6 +131,34 @@ Desktop navigation uses a compact header or sidebar according to task density. M
 
 Use shadcn/ui primitives, Tailwind CSS, Radix behavior, Lucide icons, TanStack Query, React Hook Form, Zod, date-fns, Sonner, and Recharts where needed. Do not add a competing component framework.
 
+## State and feedback contract
+
+Every data-backed page and mutation must have an intentional state, not a blank region or raw exception:
+
+| State | Required presentation |
+|---|---|
+| Initial loading | Layout-stable skeleton matching the eventual information hierarchy |
+| Background refresh | Preserve readable content and show a quiet, non-blocking refresh cue |
+| Empty | Explain why the area is empty and offer the next valid action when one exists |
+| Validation error | Field-level message plus an accessible summary for submission failures |
+| Request error | Plain-language impact, safe retained input, and a retry action when retry is valid |
+| Offline | Persistent connection notice; prevent unsafe submission while preserving entered data |
+| Success | Confirm the completed action and resulting status without exposing sensitive detail in a toast |
+| Partial integration failure | Keep the committed clinical or booking result visible; show email, calendar, or AI state separately with retry guidance where permitted |
+| Forbidden | Explain that the current role cannot access the resource without revealing whether private data exists |
+
+Slot availability is provisional until a hold is acquired. A hold countdown must expose its exact expiry in accessible text, continue accurately after tab suspension or refresh, and transition to an expired state that prevents confirmation. Never imply that a loading spinner reserves a slot.
+
+Optimistic updates are permitted only for reversible, low-risk preferences. Booking, cancellation, leave, visit completion, prescriptions, and integration status must render the server-confirmed result.
+
+## Status language
+
+- Appointment status uses an explicit label such as Held, Confirmed, In progress, Completed, Cancelled, or Cancelled—doctor leave.
+- Integration status is separate from appointment status: Pending, Synced/Sent, Retrying, or Failed.
+- AI summaries use Pending, Ready, or Unavailable. “Unavailable” must reveal the preserved original symptoms or notes rather than block the task.
+- Urgency uses text and, where useful, an icon in addition to color. Generated urgency is informational and must be labeled as AI-assisted.
+- Destructive and consequential confirmation dialogs name the object, outcome, and affected records; generic “Are you sure?” copy is insufficient.
+
 ## Accessibility and safety
 
 - Meet WCAG 2.2 AA for implemented flows.
@@ -126,9 +167,25 @@ Use shadcn/ui primitives, Tailwind CSS, Radix behavior, Lucide icons, TanStack Q
 - Never expose sensitive clinical details in toast notifications or dashboard previews unnecessarily.
 - Confirmation language must distinguish cancel, reschedule, mark leave, and complete visit.
 - Urgency labels are informational and may not present generated output as a diagnosis.
+- Announce async completion and validation errors through appropriate live regions without moving keyboard focus unexpectedly.
+- Dialogs and sheets trap focus while open, restore focus to their trigger on close, and support Escape except while a non-interruptible submission is in flight.
+- Calendar and slot controls expose date, time, availability, selection, and disabled reason to assistive technology; a pointer-only grid is not acceptable.
+- Do not encode status, selected dates, available slots, or chart values with color alone.
+- Preserve user-entered symptoms and visit notes across recoverable errors. Mask or omit private content from URLs, analytics labels, logs exposed to the browser, and notification previews.
+
+## Responsive and motion acceptance targets
+
+- Verify core flows at 320 CSS px width without clipped controls or horizontal page scrolling.
+- At 200% browser zoom, content reflows and all controls remain operable.
+- Touch targets are at least 44 × 44 CSS px where the user is expected to tap.
+- Keyboard order follows visual and task order on desktop and mobile presentations.
+- With `prefers-reduced-motion: reduce`, parallax and floating decoration stop, transitions become immediate or minimal, and no information is lost.
+- Decorative floating objects are hidden when they compete with form space, obscure text, or increase cognitive load.
 
 ## Gemini Antigravity handoff boundary
 
 Gemini owns only `apps/web/**`. It may read `docs/**` and the generated client, but it must not change backend logic, database schemas, API contracts, or generated client internals. It should begin with mocked typed fixtures and replace them through the generated client during integration.
 
 Deliver responsive patient, doctor, and admin views using the same design system, including loading, empty, error, offline/retry, and reduced-motion states.
+
+The frontend must treat server responses and generated client types as authoritative. Mock fixtures must represent success and failure states but must not create a parallel domain model. Any mismatch between this UI specification and the frozen domain or API contract is raised for contract-owner review rather than solved inside `apps/web`.
