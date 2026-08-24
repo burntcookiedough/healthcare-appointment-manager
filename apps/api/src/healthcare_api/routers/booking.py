@@ -68,7 +68,14 @@ async def get_availability(
 async def create_hold(
     payload: HoldCreateRequest,
     request: Request,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=16,
+        max_length=128,
+        pattern=r"^[\x21-\x7e]+$",
+        description="Opaque retry key for this mutation (16-128 visible ASCII characters).",
+    ),
     actor: ActorContext = Depends(require_role("patient")),
     session: AsyncSession = Depends(get_session),
 ) -> HoldResponse:
@@ -99,7 +106,14 @@ async def get_hold(
 async def release_hold(
     hold_id: UUID,
     request: Request,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=16,
+        max_length=128,
+        pattern=r"^[\x21-\x7e]+$",
+        description="Opaque retry key for this mutation (16-128 visible ASCII characters).",
+    ),
     actor: ActorContext = Depends(require_role("patient")),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
@@ -118,7 +132,14 @@ async def confirm_hold(
     hold_id: UUID,
     payload: HoldConfirmRequest,
     request: Request,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=16,
+        max_length=128,
+        pattern=r"^[\x21-\x7e]+$",
+        description="Opaque retry key for this mutation (16-128 visible ASCII characters).",
+    ),
     actor: ActorContext = Depends(require_role("patient")),
     session: AsyncSession = Depends(get_session),
 ) -> AppointmentResponse:

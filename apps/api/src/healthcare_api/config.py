@@ -9,9 +9,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Runtime settings.
 
-    Supabase verification is deliberately outside this Phase 1 boundary.  The actor
-    dependency is narrow and overrideable in tests; production authentication can be
-    attached without changing booking services.
+    Supabase access-token verification is fail-closed by default.  The local test
+    subject shortcut is opt-in and is rejected outside an explicitly local environment.
     """
 
     model_config = SettingsConfigDict(
@@ -34,6 +33,17 @@ class Settings(BaseSettings):
         default=2.0, gt=0, le=10, validation_alias="READINESS_TIMEOUT_SECONDS"
     )
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
+    supabase_jwt_secret: str | None = Field(default=None, validation_alias="SUPABASE_JWT_SECRET")
+    supabase_jwt_public_key: str | None = Field(
+        default=None, validation_alias="SUPABASE_JWT_PUBLIC_KEY"
+    )
+    supabase_jwt_issuer: str | None = Field(default=None, validation_alias="SUPABASE_JWT_ISSUER")
+    supabase_jwt_audience: str | None = Field(
+        default=None, validation_alias="SUPABASE_JWT_AUDIENCE"
+    )
+    auth_allow_local_test_tokens: bool = Field(
+        default=False, validation_alias="AUTH_ALLOW_LOCAL_TEST_TOKENS"
+    )
 
 
 @lru_cache(maxsize=1)

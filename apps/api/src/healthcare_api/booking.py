@@ -6,7 +6,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -17,7 +17,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .auth import ActorContext
 from .config import Settings
 from .errors import ApiError, ErrorBody
-from .models import Appointment, Doctor, IdempotencyRecord, SlotHold
+from .models import (
+    Appointment,
+    Doctor,
+    GeneratedArtifact,
+    IdempotencyRecord,
+    IntegrationOperation,
+    SlotHold,
+    SymptomVersion,
+)
 from .repositories import (
     add_audit_event,
     add_outbox_event,
@@ -25,6 +33,7 @@ from .repositories import (
     get_doctor_for_booking,
     list_active_appointments,
     list_active_holds,
+    list_availability_blockers,
     list_leave_overlaps,
     lock_doctor_booking_lane,
     query_owned_hold,
@@ -34,6 +43,27 @@ from .repositories import (
 from .schemas import dump_appointment, dump_hold
 
 logger = logging.getLogger(__name__)
+
+
+def _integrity_constraint_name(exc: IntegrityError) -> str | None:
+    """Read only the database constraint identifier, never the SQL/value text."""
+
+    orig = getattr(exc, "orig", None)
+    diag = getattr(orig, "diag", None)
+    name = getattr(diag, "constraint_name", None)
+    return str(name) if name else None
+
+
+def _slot_conflict_from_integrity(exc: IntegrityError, doctor_id: UUID) -> ApiError | None:
+    constraint = _integrity_constraint_name(exc)
+    if constraint in {"ex_slot_holds_active_overlap", "ex_appointments_active_overlap"}:
+        return ApiError(
+            409,
+            "SLOT_CONFLICT",
+            "The selected time is no longer available.",
+            details={"doctor_id": str(doctor_id)},
+        )
+    return None
 
 
 @dataclass(slots=True)
@@ -229,13 +259,9 @@ class BookingService:
                     self.session.add(hold)
                     await self.session.flush()
             except IntegrityError as exc:
-                if "ex_slot_holds_active_overlap" in str(exc.orig):
-                    raise ApiError(
-                        409,
-                        "SLOT_CONFLICT",
-                        "The selected time is no longer available.",
-                        details={"doctor_id": str(doctor_id)},
-                    ) from exc
+                conflict = _slot_conflict_from_integrity(exc, doctor_id)
+                if conflict is not None:
+                    raise conflict from exc
                 raise
             await add_audit_event(
                 self.session,
@@ -385,39 +411,99 @@ class BookingService:
                     self.session.add(appointment)
                     await self.session.flush()
             except IntegrityError as exc:
-                if "ex_appointments_active_overlap" in str(exc.orig):
-                    raise ApiError(
-                        409,
-                        "SLOT_CONFLICT",
-                        "The selected time is no longer available.",
-                        details={"doctor_id": str(hold.doctor_id)},
-                    ) from exc
+                conflict = _slot_conflict_from_integrity(exc, hold.doctor_id)
+                if conflict is not None:
+                    raise conflict from exc
                 raise
+            symptom = SymptomVersion(
+                appointment_id=appointment.id,
+                version=1,
+                symptoms_text=symptoms_text,
+                created_by_actor_id=_actor_uuid(actor),
+            )
+            self.session.add(symptom)
+            await self.session.flush()
+            pre_visit_artifact = GeneratedArtifact(
+                appointment_id=appointment.id,
+                artifact_type="pre_visit_brief",
+                status="pending",
+                source_record_type="symptom_version",
+                source_record_id=symptom.id,
+                source_versions={"symptom_version": 1},
+                task_version="v1",
+            )
+            self.session.add(pre_visit_artifact)
+            await self.session.flush()
             hold.status = "converted"
             hold.version += 1
             hold.updated_at = now
-            await add_outbox_event(
+            notification_event = await add_outbox_event(
                 self.session,
-                event_type="appointment.confirmed",
+                event_type="email.notification",
                 aggregate_type="appointment",
                 aggregate_id=appointment.id,
                 appointment_id=appointment.id,
                 dedupe_key=f"appointment-confirmed:{appointment.id}",
-                payload={"appointment_id": str(appointment.id), "channels": ["email", "calendar"]},
+                payload={
+                    "appointment_id": str(appointment.id),
+                    "template_key": "appointment_confirmed",
+                    "recipient_reference": str(appointment.patient_id),
+                },
+                correlation_id=self.request_id,
             )
-            await add_outbox_event(
+            self.session.add(
+                IntegrationOperation(
+                    appointment_id=appointment.id,
+                    outbox_event_id=notification_event.id,
+                    channel="email",
+                    state="pending",
+                )
+            )
+            calendar_event = await add_outbox_event(
                 self.session,
-                event_type="appointment.calendar_sync",
+                event_type="calendar.sync",
                 aggregate_type="appointment",
                 aggregate_id=appointment.id,
                 appointment_id=appointment.id,
                 dedupe_key=f"appointment-calendar:{appointment.id}",
                 payload={
                     "appointment_id": str(appointment.id),
-                    "doctor_id": str(appointment.doctor_id),
                     "starts_at": appointment.starts_at.isoformat(),
                     "ends_at": appointment.ends_at.isoformat(),
+                    "time_zone": "UTC",
+                    "event_label": "Healthcare appointment",
                 },
+                correlation_id=self.request_id,
+            )
+            self.session.add(
+                IntegrationOperation(
+                    appointment_id=appointment.id,
+                    outbox_event_id=calendar_event.id,
+                    channel="calendar",
+                    state="pending",
+                )
+            )
+            llm_event = await add_outbox_event(
+                self.session,
+                event_type="llm.summary",
+                aggregate_type="appointment",
+                aggregate_id=appointment.id,
+                appointment_id=appointment.id,
+                dedupe_key=f"appointment-pre-visit-brief:{appointment.id}",
+                payload={
+                    "source_record_reference": str(symptom.id),
+                    "source_version": 1,
+                    "task_kind": "pre_visit_brief",
+                },
+                correlation_id=self.request_id,
+            )
+            self.session.add(
+                IntegrationOperation(
+                    appointment_id=appointment.id,
+                    outbox_event_id=llm_event.id,
+                    channel="llm",
+                    state="pending",
+                )
             )
             await add_audit_event(
                 self.session,
@@ -458,7 +544,7 @@ class BookingService:
             zone = self._zone(doctor)
             local_date = starts_at.astimezone(zone).date()
             final_date = ends_at.astimezone(zone).date()
-            slots: list[dict[str, Any]] = []
+            candidates: list[tuple[datetime, datetime]] = []
             cursor = local_date
             while cursor <= final_date:
                 for hours in doctor.working_hours:
@@ -472,36 +558,29 @@ class BookingService:
                         slot_start = candidate.astimezone(UTC)
                         slot_end = candidate_end.astimezone(UTC)
                         if slot_start >= starts_at and slot_end <= ends_at:
-                            leave = await list_leave_overlaps(
-                                self.session,
-                                doctor_id=doctor_id,
-                                starts_at=slot_start,
-                                ends_at=slot_end,
-                            )
-                            holds = await list_active_holds(
-                                self.session,
-                                doctor_id=doctor_id,
-                                starts_at=slot_start,
-                                ends_at=slot_end,
-                                now=now,
-                            )
-                            appointments = await list_active_appointments(
-                                self.session,
-                                doctor_id=doctor_id,
-                                starts_at=slot_start,
-                                ends_at=slot_end,
-                            )
-                            slots.append(
-                                {
-                                    "doctor_id": doctor_id,
-                                    "starts_at": slot_start,
-                                    "ends_at": slot_end,
-                                    "available": not leave and not holds and not appointments,
-                                }
-                            )
+                            candidates.append((slot_start, slot_end))
                         candidate = candidate_end
                 cursor += timedelta(days=1)
-            slots.sort(key=lambda item: item["starts_at"])
+            blockers = await list_availability_blockers(
+                self.session,
+                doctor_id=doctor_id,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                now=now,
+            )
+            slots = [
+                {
+                    "doctor_id": doctor_id,
+                    "starts_at": slot_start,
+                    "ends_at": slot_end,
+                    "available": not any(
+                        blocker_start < slot_end and blocker_end > slot_start
+                        for _, blocker_start, blocker_end in blockers
+                    ),
+                }
+                for slot_start, slot_end in candidates
+            ]
+            slots.sort(key=lambda item: cast(datetime, item["starts_at"]))
             return slots
 
     @staticmethod

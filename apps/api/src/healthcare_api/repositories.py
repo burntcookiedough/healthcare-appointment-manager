@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import Select, func, literal, select, union_all, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +23,41 @@ from .models import (
     OutboxEvent,
     SlotHold,
 )
+
+_SAFE_PAYLOAD_KEY_PARTS = (
+    "symptom",
+    "note",
+    "diagnos",
+    "prescription",
+    "clinical",
+    "email",
+    "phone",
+    "address",
+    "token",
+    "secret",
+    "prompt",
+    "response",
+    "content",
+    "body",
+    "_text",
+)
+
+
+def _assert_reference_payload(value: Any, *, path: str = "payload") -> None:
+    """Reject PHI/secrets before they can enter a durable outbox row."""
+
+    if isinstance(value, Mapping):
+        for raw_key, child in value.items():
+            key = re.sub(r"[^a-z0-9_]+", "_", str(raw_key).casefold()).strip("_")
+            if key.endswith(("_id", "_uuid", "_ref", "_reference")):
+                if isinstance(child, str) and "@" in child:
+                    raise ValueError(f"outbox payload field at {path}.{raw_key} is not allowed")
+            elif key.endswith("_name") or any(part in key for part in _SAFE_PAYLOAD_KEY_PARTS):
+                raise ValueError(f"outbox payload field at {path}.{raw_key} is not allowed")
+            _assert_reference_payload(child, path=f"{path}.{raw_key}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _assert_reference_payload(child, path=f"{path}[{index}]")
 
 
 def request_fingerprint(value: Mapping[str, Any]) -> str:
@@ -148,6 +184,58 @@ async def list_active_appointments(
     return list(result.scalars())
 
 
+async def list_availability_blockers(
+    session: AsyncSession,
+    *,
+    doctor_id: UUID,
+    starts_at: datetime,
+    ends_at: datetime,
+    now: datetime,
+) -> list[tuple[str, datetime, datetime]]:
+    """Fetch all blockers for an availability window in one set-oriented query.
+
+    Availability generation may produce many candidate slots.  The old implementation
+    executed three queries for every candidate; this query returns the union of all
+    relevant leave, hold, and appointment ranges once, after which the service performs
+    cheap in-memory interval checks.
+    """
+
+    leave_query = select(
+        literal("leave").label("kind"),
+        DoctorLeave.starts_at.label("starts_at"),
+        DoctorLeave.ends_at.label("ends_at"),
+    ).where(
+        DoctorLeave.doctor_id == doctor_id,
+        DoctorLeave.is_active.is_(True),
+        DoctorLeave.starts_at < ends_at,
+        DoctorLeave.ends_at > starts_at,
+    )
+    hold_query = select(
+        literal("hold").label("kind"),
+        SlotHold.starts_at.label("starts_at"),
+        SlotHold.ends_at.label("ends_at"),
+    ).where(
+        SlotHold.doctor_id == doctor_id,
+        SlotHold.status == "active",
+        SlotHold.expires_at > now,
+        SlotHold.starts_at < ends_at,
+        SlotHold.ends_at > starts_at,
+    )
+    appointment_query = select(
+        literal("appointment").label("kind"),
+        Appointment.starts_at.label("starts_at"),
+        Appointment.ends_at.label("ends_at"),
+    ).where(
+        Appointment.doctor_id == doctor_id,
+        Appointment.status.in_(("confirmed", "in_progress")),
+        Appointment.starts_at < ends_at,
+        Appointment.ends_at > starts_at,
+    )
+    statement = union_all(leave_query, hold_query, appointment_query)
+    result = await session.execute(statement)
+    return [(str(row.kind), row.starts_at, row.ends_at) for row in result]
+
+
 async def expire_active_holds(
     session: AsyncSession, *, now: datetime, doctor_id: UUID | None = None
 ) -> None:
@@ -178,7 +266,18 @@ async def add_outbox_event(
     dedupe_key: str,
     payload: dict[str, Any],
     appointment_id: UUID | None = None,
+    correlation_id: str | None = None,
+    version: int = 1,
 ) -> OutboxEvent:
+    """Persist a worker-compatible, reference-only outbox row.
+
+    The worker validates an EventEnvelope.  Keeping the event UUID, correlation ID,
+    and schema version as first-class columns lets a dispatcher construct that
+    envelope without copying PHI into the payload.
+    """
+
+    _assert_reference_payload(payload)
+
     event = OutboxEvent(
         event_type=event_type,
         aggregate_type=aggregate_type,
@@ -186,6 +285,8 @@ async def add_outbox_event(
         appointment_id=appointment_id,
         dedupe_key=dedupe_key,
         payload=payload,
+        correlation_id=correlation_id or "system",
+        version=version,
     )
     session.add(event)
     await session.flush()

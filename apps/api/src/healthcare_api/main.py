@@ -20,6 +20,7 @@ from .errors import (
 from .logging_config import configure_logging
 from .middleware import RequestIdMiddleware
 from .routers.booking import router as booking_router
+from .routers.domain import router as domain_router
 from .routers.health import router as health_router
 
 
@@ -49,6 +50,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(403, http_exception_handler)
     app.add_exception_handler(404, http_exception_handler)
     app.include_router(health_router, prefix=settings.api_prefix)
+    app.include_router(domain_router, prefix=settings.api_prefix)
     app.include_router(booking_router, prefix=settings.api_prefix)
     # Local tooling often probes /health/* before knowing the API base path.  Keep a
     # schema-hidden alias while the documented contract remains /api/v1/health/*.

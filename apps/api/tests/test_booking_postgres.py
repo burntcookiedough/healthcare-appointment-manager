@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import subprocess
+import sys
 from datetime import UTC, datetime, time, timedelta
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -24,7 +27,6 @@ from healthcare_api.errors import ApiError
 from healthcare_api.models import (
     Actor,
     Appointment,
-    Base,
     Doctor,
     DoctorWorkingHour,
     OutboxEvent,
@@ -41,6 +43,7 @@ pytestmark = [
         reason="set HEALTHCARE_TEST_DATABASE_URL to run PostgreSQL integration tests",
     ),
 ]
+API_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _async_url(url: str) -> str:
@@ -54,13 +57,25 @@ async def database_engine() -> AsyncEngine:
     assert TEST_DATABASE_URL is not None
     active_engine = create_async_engine(_async_url(TEST_DATABASE_URL), pool_pre_ping=True)
     async with active_engine.begin() as connection:
-        await connection.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto"))
-        await connection.execute(text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
-        await connection.run_sync(Base.metadata.drop_all)
-        await connection.run_sync(Base.metadata.create_all)
+        await connection.execute(text("DROP SCHEMA public CASCADE"))
+        await connection.execute(text("CREATE SCHEMA public"))
+        await connection.execute(text("GRANT ALL ON SCHEMA public TO healthcare"))
+    environment = os.environ.copy()
+    environment["DATABASE_URL"] = _async_url(TEST_DATABASE_URL)
+    await asyncio.to_thread(
+        subprocess.run,
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=API_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     yield active_engine
     async with active_engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
+        await connection.execute(text("DROP SCHEMA public CASCADE"))
+        await connection.execute(text("CREATE SCHEMA public"))
+        await connection.execute(text("GRANT ALL ON SCHEMA public TO healthcare"))
     await active_engine.dispose()
 
 
@@ -69,9 +84,11 @@ async def clean_database(database_engine: AsyncEngine):
     async with database_engine.begin() as connection:
         await connection.execute(
             text(
-                "TRUNCATE audit_events, outbox_events, idempotency_records, appointments, "
-                "slot_holds, doctor_leave, doctor_working_hours, doctors, patient_profiles, "
-                "actors CASCADE"
+                "TRUNCATE integration_operations, reminder_occurrences, reminder_preferences, "
+                "prescription_items, prescriptions, generated_artifacts, visit_note_versions, "
+                "visits, symptom_versions, appointment_history, leave_previews, audit_events, "
+                "outbox_events, idempotency_records, appointments, slot_holds, doctor_leave, "
+                "doctor_working_hours, doctors, patient_profiles, actors CASCADE"
             )
         )
     yield

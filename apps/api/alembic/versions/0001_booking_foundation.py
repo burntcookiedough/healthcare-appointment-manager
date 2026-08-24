@@ -107,7 +107,7 @@ def upgrade() -> None:
             created_at timestamptz NOT NULL DEFAULT now(),
             updated_at timestamptz NOT NULL DEFAULT now(),
             CHECK (starts_at < ends_at),
-            EXCLUDE USING gist (doctor_id WITH =, slot_range WITH &&) WHERE (status = 'active')
+            CONSTRAINT ex_slot_holds_active_overlap EXCLUDE USING gist (doctor_id WITH =, slot_range WITH &&) WHERE (status = 'active')
         )
         """
     )
@@ -130,7 +130,7 @@ def upgrade() -> None:
             created_at timestamptz NOT NULL DEFAULT now(),
             updated_at timestamptz NOT NULL DEFAULT now(),
             CHECK (starts_at < ends_at),
-            EXCLUDE USING gist (doctor_id WITH =, slot_range WITH &&) WHERE (status IN ('confirmed', 'in_progress'))
+            CONSTRAINT ex_appointments_active_overlap EXCLUDE USING gist (doctor_id WITH =, slot_range WITH &&) WHERE (status IN ('confirmed', 'in_progress'))
         )
         """
     )
@@ -200,7 +200,7 @@ def upgrade() -> None:
     op.execute("CREATE INDEX ix_audit_events_actor_created ON audit_events (actor_id, created_at)")
     op.execute(
         """
-        CREATE FUNCTION reject_audit_mutation() RETURNS trigger
+        CREATE OR REPLACE FUNCTION reject_audit_mutation() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
             RAISE EXCEPTION 'audit_events are immutable';

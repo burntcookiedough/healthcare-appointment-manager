@@ -8,7 +8,7 @@ the authority under concurrent writes.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Any
 
 from sqlalchemy import (
@@ -75,10 +75,14 @@ class PatientProfile(Base, TimestampMixin):
     display_name: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'Patient'")
     )
+    timezone: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'UTC'"))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
 
     actor: Mapped[Actor] = relationship(back_populates="patient_profile")
     holds: Mapped[list[SlotHold]] = relationship(back_populates="patient")
     appointments: Mapped[list[Appointment]] = relationship(back_populates="patient")
+
+    __table_args__ = (CheckConstraint("version > 0", name="ck_patient_profiles_version"),)
 
 
 class Doctor(Base, TimestampMixin):
@@ -101,6 +105,7 @@ class Doctor(Base, TimestampMixin):
         ARRAY(Integer), nullable=False, server_default=text("ARRAY[30]::integer[]")
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     schedule_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
 
     actor: Mapped[Actor] = relationship(back_populates="doctor_profile")
@@ -113,7 +118,10 @@ class Doctor(Base, TimestampMixin):
     holds: Mapped[list[SlotHold]] = relationship(back_populates="doctor")
     appointments: Mapped[list[Appointment]] = relationship(back_populates="doctor")
 
-    __table_args__ = (CheckConstraint("schedule_version > 0", name="ck_doctors_schedule_version"),)
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_doctors_version"),
+        CheckConstraint("schedule_version > 0", name="ck_doctors_schedule_version"),
+    )
 
 
 class DoctorWorkingHour(Base, TimestampMixin):
@@ -154,11 +162,13 @@ class DoctorLeave(Base, TimestampMixin):
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     reason: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
 
     doctor: Mapped[Doctor] = relationship(back_populates="leave")
 
     __table_args__ = (
         CheckConstraint("starts_at < ends_at", name="ck_doctor_leave_interval"),
+        CheckConstraint("version > 0", name="ck_doctor_leave_version"),
         Index("ix_doctor_leave_doctor_interval", "doctor_id", "starts_at", "ends_at"),
     )
 
@@ -230,6 +240,7 @@ class Appointment(Base, TimestampMixin):
     )
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'confirmed'"))
     symptoms_text: Mapped[str] = mapped_column(Text, nullable=False)
+    urgency: Mapped[str | None] = mapped_column(Text)
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
 
     patient: Mapped[PatientProfile] = relationship(back_populates="appointments")
@@ -245,6 +256,10 @@ class Appointment(Base, TimestampMixin):
             "'cancelled_admin', 'cancelled_doctor_leave'"
             ")",
             name="ck_appointments_status",
+        ),
+        CheckConstraint(
+            "urgency IS NULL OR urgency IN ('routine', 'soon', 'urgent')",
+            name="ck_appointments_urgency",
         ),
         ExcludeConstraint(
             ("doctor_id", "="),
@@ -302,6 +317,10 @@ class OutboxEvent(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    correlation_id: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'system'")
+    )
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'pending'"))
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     next_attempt_at: Mapped[datetime] = mapped_column(
@@ -320,6 +339,7 @@ class OutboxEvent(Base):
             "status IN ('pending', 'processing', 'succeeded', 'retrying', 'failed')",
             name="ck_outbox_status",
         ),
+        CheckConstraint("version > 0", name="ck_outbox_version"),
         UniqueConstraint(
             "event_type", "aggregate_type", "aggregate_id", "dedupe_key", name="uq_outbox_dedupe"
         ),
@@ -350,4 +370,344 @@ class AuditEvent(Base):
     __table_args__ = (
         Index("ix_audit_events_resource", "resource_type", "resource_id", "created_at"),
         Index("ix_audit_events_actor_created", "actor_id", "created_at"),
+    )
+
+
+class SymptomVersion(Base):
+    """Immutable patient symptom source records."""
+
+    __tablename__ = "symptom_versions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid_default
+    )
+    appointment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("appointments.id", ondelete="CASCADE"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    symptoms_text: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'patient'"))
+    created_by_actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actors.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_symptom_versions_version"),
+        CheckConstraint("source IN ('patient', 'imported')", name="ck_symptom_versions_source"),
+        UniqueConstraint("appointment_id", "version", name="uq_symptom_versions_appointment"),
+        Index("ix_symptom_versions_appointment", "appointment_id", "version"),
+    )
+
+
+class Visit(Base, TimestampMixin):
+    """One doctor workspace and immutable completion boundary per appointment."""
+
+    __tablename__ = "visits"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid_default
+    )
+    appointment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("appointments.id", ondelete="RESTRICT"), nullable=False
+    )
+    doctor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("doctors.id", ondelete="RESTRICT"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'draft'"))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    urgency: Mapped[str | None] = mapped_column(Text)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("appointment_id", name="uq_visits_appointment"),
+        CheckConstraint("status IN ('draft', 'completed')", name="ck_visits_status"),
+        CheckConstraint("version > 0", name="ck_visits_version"),
+        CheckConstraint(
+            "urgency IS NULL OR urgency IN ('routine', 'soon', 'urgent')",
+            name="ck_visits_urgency",
+        ),
+        Index("ix_visits_doctor_status", "doctor_id", "status"),
+    )
+
+
+class VisitNoteVersion(Base):
+    """Append-only doctor-authored note versions."""
+
+    __tablename__ = "visit_note_versions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid_default
+    )
+    visit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("visits.id", ondelete="CASCADE"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    notes_text: Mapped[str] = mapped_column(Text, nullable=False)
+    author_actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actors.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_visit_note_versions_version"),
+        UniqueConstraint("visit_id", "version", name="uq_visit_note_versions_visit"),
+        Index("ix_visit_note_versions_visit", "visit_id", "version"),
+    )
+
+
+class Prescription(Base, TimestampMixin):
+    """Structured prescription envelope; prose is advisory and never parsed."""
+
+    __tablename__ = "prescriptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid_default
+    )
+    visit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("visits.id", ondelete="RESTRICT"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'draft'"))
+    advisory_text: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        UniqueConstraint("visit_id", name="uq_prescriptions_visit"),
+        CheckConstraint("version > 0", name="ck_prescriptions_version"),
+        CheckConstraint("status IN ('draft', 'completed')", name="ck_prescriptions_status"),
+    )
+
+
+class PrescriptionItem(Base):
+    """Deterministic medication schedule source fields."""
+
+    __tablename__ = "prescription_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid_default
+    )
+    prescription_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prescriptions.id", ondelete="CASCADE"), nullable=False
+    )
+    medication_name: Mapped[str] = mapped_column(Text, nullable=False)
+    dosage: Mapped[str] = mapped_column(Text, nullable=False)
+    route: Mapped[str | None] = mapped_column(Text)
+    frequency: Mapped[str] = mapped_column(Text, nullable=False)
+    start_date: Mapped[date] = mapped_column(nullable=False)
+    end_date: Mapped[date | None] = mapped_column()
+    duration_days: Mapped[int | None] = mapped_column(Integer)
+    instructions: Mapped[str] = mapped_column(Text, nullable=False)
+    prescriber_actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actors.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "frequency IN ("
+            "'once_daily', 'twice_daily', 'three_times_daily', 'every_4_hours', 'as_needed'"
+            ")",
+            name="ck_prescription_items_frequency",
+        ),
+        CheckConstraint(
+            "duration_days IS NULL OR duration_days BETWEEN 1 AND 3650",
+            name="ck_prescription_items_duration",
+        ),
+        CheckConstraint(
+            "end_date IS NULL OR end_date >= start_date", name="ck_prescription_items_dates"
+        ),
+        Index("ix_prescription_items_prescription", "prescription_id"),
+    )
+
+
+class GeneratedArtifact(Base, TimestampMixin):
+    """Versioned, visibly advisory generated output."""
+
+    __tablename__ = "generated_artifacts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid_default
+    )
+    appointment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("appointments.id", ondelete="CASCADE")
+    )
+    visit_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("visits.id", ondelete="CASCADE")
+    )
+    artifact_type: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'pending'"))
+    content: Mapped[str | None] = mapped_column(Text)
+    source_record_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source_record_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    source_versions: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    task_version: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'v1'"))
+    provider: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(Text)
+    error_code: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        CheckConstraint(
+            "artifact_type IN ('pre_visit_brief', 'post_visit_summary')",
+            name="ck_generated_artifacts_type",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'succeeded', 'failed')", name="ck_generated_artifacts_status"
+        ),
+        CheckConstraint(
+            "appointment_id IS NOT NULL OR visit_id IS NOT NULL",
+            name="ck_generated_artifacts_owner",
+        ),
+        Index("ix_generated_artifacts_appointment", "appointment_id", "artifact_type"),
+        Index("ix_generated_artifacts_visit", "visit_id", "artifact_type"),
+    )
+
+
+class ReminderPreference(Base, TimestampMixin):
+    __tablename__ = "reminder_preferences"
+
+    patient_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("patient_profiles.actor_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    channel: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'email'"))
+    timezone: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'UTC'"))
+    local_times: Mapped[list[time]] = mapped_column(
+        ARRAY(Time), nullable=False, server_default=text("ARRAY['09:00']::time[]")
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('email', 'sms', 'push')", name="ck_reminder_preferences_channel"
+        ),
+        CheckConstraint("version > 0", name="ck_reminder_preferences_version"),
+    )
+
+
+class ReminderOccurrence(Base):
+    __tablename__ = "reminder_occurrences"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid_default
+    )
+    prescription_item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prescription_items.id", ondelete="CASCADE"), nullable=False
+    )
+    prescription_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    occurrence_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'pending'"))
+    dedupe_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'sent', 'cancelled', 'failed')",
+            name="ck_reminder_occurrences_status",
+        ),
+        Index("ix_reminder_occurrences_due", "status", "occurrence_at"),
+    )
+
+
+class IntegrationOperation(Base, TimestampMixin):
+    __tablename__ = "integration_operations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid_default
+    )
+    appointment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("appointments.id", ondelete="CASCADE")
+    )
+    outbox_event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("outbox_events.id", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
+    state: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'pending'"))
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(Text)
+    provider_reference: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+
+    __table_args__ = (
+        UniqueConstraint(
+            "outbox_event_id", "channel", name="uq_integration_operations_event_channel"
+        ),
+        CheckConstraint(
+            "state IN ('pending', 'succeeded', 'retrying', 'failed')",
+            name="ck_integration_operations_state",
+        ),
+        CheckConstraint("version > 0", name="ck_integration_operations_version"),
+        Index("ix_integration_operations_state", "channel", "state", "updated_at"),
+    )
+
+
+class AppointmentHistory(Base):
+    __tablename__ = "appointment_history"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid_default
+    )
+    appointment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("appointments.id", ondelete="CASCADE"), nullable=False
+    )
+    from_status: Mapped[str | None] = mapped_column(Text)
+    to_status: Mapped[str] = mapped_column(Text, nullable=False)
+    old_starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    old_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str | None] = mapped_column(Text)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actors.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (Index("ix_appointment_history_appointment", "appointment_id", "created_at"),)
+
+
+class LeavePreview(Base):
+    __tablename__ = "leave_previews"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid_default
+    )
+    token_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    doctor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("doctors.id", ondelete="CASCADE"), nullable=False
+    )
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expected_schedule_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    affected_hold_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    affected_appointment_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by_actor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actors.id", ondelete="RESTRICT"), nullable=False
+    )
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("starts_at < ends_at", name="ck_leave_previews_interval"),
+        CheckConstraint("expected_schedule_version > 0", name="ck_leave_previews_schedule_version"),
+        Index("ix_leave_previews_doctor_expiry", "doctor_id", "expires_at"),
     )

@@ -140,7 +140,14 @@ async def http_exception_handler(request: Request, exc: Exception) -> JSONRespon
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.exception(
-        "unhandled_api_error", extra={"request_id": _request_id(request), "outcome": "error"}
-    )
+    # Keep an operationally useful, bounded diagnostic while excluding exception
+    # messages/SQL values that may contain submitted clinical text.
+    origin = getattr(exc, "orig", None)
+    diagnostic = {
+        "request_id": _request_id(request),
+        "outcome": "error",
+        "error_type": type(exc).__name__,
+        "constraint": getattr(getattr(origin, "diag", None), "constraint_name", None),
+    }
+    logger.error("unhandled_api_error", extra=diagnostic)
     return _response(request, ApiError(500, "INTERNAL_ERROR", "An unexpected error occurred."))
