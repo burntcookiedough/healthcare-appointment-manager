@@ -12,10 +12,12 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from healthcare_api.auth import verify_access_token
 from healthcare_api.config import Settings
 from healthcare_api.domain import deterministic_occurrences
+from healthcare_api.domain_schemas import PatientVisitResponse
 from healthcare_api.errors import ApiError
 from healthcare_api.main import app
 from healthcare_api.models import PrescriptionItem
@@ -106,6 +108,32 @@ def test_worker_event_envelope_rejects_phi_and_accepts_reference_payload() -> No
         )
 
 
+def test_api_llm_event_task_kinds_match_worker_contract() -> None:
+    from healthcare_worker.ports import ClinicalSummaryRequest
+
+    for task_kind in ("pre_visit", "post_visit", "plain_language_summary"):
+        request = ClinicalSummaryRequest(
+            source_record_reference=uuid4(), source_version=1, task_kind=task_kind
+        )
+        assert request.task_kind == task_kind
+    with pytest.raises(ValueError):
+        ClinicalSummaryRequest(task_kind="pre_visit_brief")
+
+
+def test_api_runtime_image_has_import_migration_and_health_support() -> None:
+    api_root = Path(__file__).parents[1]
+    dockerfile = (api_root / "Dockerfile").read_text()
+    dockerignore = (api_root / ".dockerignore").read_text()
+    assert "uv sync --frozen --no-dev" in dockerfile
+    assert "import healthcare_api" in dockerfile
+    assert "alembic" in dockerfile
+    assert "HEALTHCHECK" in dockerfile
+    assert "USER 10001:10001" in dockerfile
+    assert "tests/" in dockerignore
+    assert ".env" in dockerignore
+    assert (api_root / "src" / "healthcare_api" / "py.typed").is_file()
+
+
 def test_api_outbox_payload_guard_rejects_raw_contact_data() -> None:
     _assert_reference_payload({"appointment_id": str(uuid4()), "recipient_reference": str(uuid4())})
     with pytest.raises(ValueError):
@@ -141,3 +169,90 @@ def test_openapi_marks_all_idempotent_commands_with_required_header() -> None:
         )
         for operation in operations.values()
     )
+
+
+def test_openapi_documents_protected_error_envelopes_and_collection_views() -> None:
+    openapi = app.openapi()
+    operations = {
+        operation.get("operationId"): operation
+        for path in openapi["paths"].values()
+        for operation in path.values()
+        if isinstance(operation, dict) and operation.get("operationId")
+    }
+    protected = {
+        "cancelAppointment",
+        "rescheduleAppointment",
+        "getAppointmentVisit",
+        "openAppointmentVisit",
+        "updateVisit",
+        "completeVisit",
+        "amendVisit",
+        "listDoctorLeave",
+        "applyDoctorLeave",
+        "updateDoctorLeave",
+        "deleteDoctorLeave",
+        "retryIntegrationOperation",
+    }
+    expected_errors = {"401", "403", "404", "409", "422", "500"}
+    for operation_id in protected:
+        assert expected_errors <= set(operations[operation_id]["responses"])
+        for status_code in expected_errors:
+            schema = operations[operation_id]["responses"][status_code]["content"][
+                "application/json"
+            ]["schema"]
+            assert schema["$ref"].endswith("/ErrorResponse")
+
+    leave_schema = operations["listDoctorLeave"]["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
+    assert leave_schema["$ref"].endswith("/LeaveListResponse")
+    availability_schema = operations["getDoctorAvailability"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    assert availability_schema["$ref"].endswith("/AvailabilityResponse")
+    doctor_search_parameters = {
+        parameter["name"]: parameter for parameter in operations["searchDoctors"]["parameters"]
+    }
+    assert doctor_search_parameters["search"]["in"] == "query"
+    assert "query" not in doctor_search_parameters
+
+    ready = operations["getHealthReady"]["responses"]
+    assert ready["503"]["content"]["application/json"]["schema"]["$ref"].endswith("/ErrorResponse")
+
+
+def test_patient_visit_projection_has_no_doctor_only_fields() -> None:
+    payload = {
+        "id": uuid4(),
+        "appointment_id": uuid4(),
+        "doctor_id": uuid4(),
+        "status": "completed",
+        "version": 3,
+        "urgency": "routine",
+        "prescription": None,
+        "generated_artifacts": [],
+        "created_at": "2026-08-24T08:30:00Z",
+        "updated_at": "2026-08-24T09:00:00Z",
+        "completed_at": "2026-08-24T09:00:00Z",
+    }
+    projection = PatientVisitResponse.model_validate(payload)
+    assert not hasattr(projection, "notes")
+    assert not hasattr(projection, "advisory_text")
+    with pytest.raises(ValidationError):
+        PatientVisitResponse.model_validate({**payload, "notes": [{"notes_text": "secret"}]})
+
+    with pytest.raises(ValidationError):
+        PatientVisitResponse.model_validate(
+            {
+                **payload,
+                "generated_artifacts": [
+                    {
+                        "id": uuid4(),
+                        "artifact_type": "pre_visit_brief",
+                        "status": "succeeded",
+                        "content": "clinician-only brief",
+                        "created_at": "2026-08-24T08:30:00Z",
+                        "updated_at": "2026-08-24T09:00:00Z",
+                    }
+                ],
+            }
+        )

@@ -88,6 +88,11 @@ class DoctorSummaryResponse(WireModel):
     timezone: str
     appointment_durations_minutes: list[int]
     is_active: bool
+    # These public discovery fields are optional until their backing profile data is
+    # provisioned; the API never invents values for them.
+    avatar_url: str | None = None
+    biography: str | None = None
+    next_available_at: datetime | None = None
 
 
 class DoctorListResponse(StrictModel):
@@ -326,6 +331,47 @@ class GeneratedArtifactResponse(WireModel):
     error_code: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class PatientGeneratedArtifactResponse(WireModel):
+    """Patient-safe generated output without provenance or provider internals."""
+
+    id: UUID
+    artifact_type: Literal["post_visit_summary"]
+    status: Literal["pending", "succeeded", "failed"]
+    content: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PatientPrescriptionResponse(StrictModel):
+    """Patient-visible structured medication instructions only."""
+
+    id: UUID
+    version: int
+    status: Literal["draft", "completed"]
+    items: list[PrescriptionItemResponse]
+
+
+class PatientVisitResponse(WireModel):
+    """Completed visit projection intended for the owning patient.
+
+    Doctor-authored note text, internal advisory/diagnostic prose, and doctor-only
+    prescription fields are deliberately absent from this model rather than being
+    represented as nullable values.
+    """
+
+    id: UUID
+    appointment_id: UUID
+    doctor_id: UUID
+    status: Literal["completed"]
+    version: int
+    urgency: str | None = None
+    prescription: PatientPrescriptionResponse | None = None
+    generated_artifacts: list[PatientGeneratedArtifactResponse]
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime
 
 
 class VisitResponse(WireModel):

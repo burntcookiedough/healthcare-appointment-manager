@@ -518,6 +518,13 @@ async def test_leave_preview_apply_atomicity_and_stale_replay(
         },
     )
     assert apply.status_code == 201
+    leave_list = await api_client.get(
+        f"/api/v1/doctors/{seed.doctor_a_id}/leave",
+        headers=_headers(seed.doctor_a.subject_id),
+    )
+    assert leave_list.status_code == 200
+    assert leave_list.json()["next_cursor"] is None
+    assert [item["id"] for item in leave_list.json()["items"]] == [apply.json()["id"]]
 
     async with session_factory() as session:
         hold = await session.get(SlotHold, hold_id)
@@ -541,6 +548,9 @@ async def test_leave_preview_apply_atomicity_and_stale_replay(
     assert {event.event_type for event in leave_events} == {"email.notification", "calendar.sync"}
     assert all("@" not in json.dumps(event.payload) for event in leave_events)
     assert all("symptom" not in json.dumps(event.payload).casefold() for event in leave_events)
+    calendar_event = next(event for event in leave_events if event.event_type == "calendar.sync")
+    assert calendar_event.payload["action"] == "delete"
+    assert calendar_event.payload["provider_event_reference"]
 
     replay = await api_client.post(
         f"/api/v1/doctors/{seed.doctor_a_id}/leave",
@@ -833,6 +843,15 @@ async def test_visit_sources_prescription_artifacts_and_reminders_are_persisted(
                 )
             ).scalars()
         )
+        llm_events = list(
+            (
+                await session.execute(
+                    select(OutboxEvent)
+                    .where(OutboxEvent.appointment_id == appointment_id)
+                    .where(OutboxEvent.event_type == "llm.summary")
+                )
+            ).scalars()
+        )
         appointment = await session.get(Appointment, appointment_id)
     assert [row.version for row in symptoms_rows] == [1, 2]
     assert [row.symptoms_text for row in symptoms_rows] == [
@@ -850,6 +869,10 @@ async def test_visit_sources_prescription_artifacts_and_reminders_are_persisted(
     assert {artifact.artifact_type for artifact in visit_artifacts} == {"post_visit_summary"}
     assert all(artifact.status == "pending" for artifact in appointment_artifacts)
     assert appointment is not None and appointment.status == "completed"
+    assert {event.payload["task_kind"] for event in llm_events} == {
+        "pre_visit",
+        "plain_language_summary",
+    }
 
     reminder = await api_client.get(
         f"/api/v1/prescriptions/{prescription.id}/reminder-schedule",
@@ -863,13 +886,24 @@ async def test_visit_sources_prescription_artifacts_and_reminders_are_persisted(
         f"/api/v1/appointments/{appointment_id}/visit",
         headers=_headers(seed.patients[0].subject_id),
     )
+    doctor_view = await api_client.get(
+        f"/api/v1/appointments/{appointment_id}/visit",
+        headers=_headers(seed.doctor_a.subject_id),
+    )
     assert reminder.status_code == 200
     assert reminder_replay.status_code == 200
     assert len(reminder.json()["items"]) == 4
     assert reminder_replay.json() == reminder.json()
     assert patient_view.status_code == 200
     assert patient_view.json()["status"] == "completed"
-    assert patient_view.json()["notes"][0]["notes_text"] == "original doctor note"
+    assert "notes" not in patient_view.json()
+    assert "advisory_text" not in patient_view.text
+    assert "original doctor note" not in patient_view.text
+    assert doctor_view.status_code == 200
+    assert doctor_view.json()["notes"][0]["notes_text"] == "original doctor note"
+    assert doctor_view.json()["prescription"]["advisory_text"] == (
+        "Advisory prose must not drive reminders."
+    )
     assert "provider_reference" not in patient_view.text
 
     amendment_payload = {

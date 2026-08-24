@@ -33,6 +33,7 @@ from ..domain_schemas import (
     LeavePreviewRequest,
     LeaveResponse,
     PatientProfileResponse,
+    PatientVisitResponse,
     ProfileUpdateRequest,
     ReminderPreferencesRequest,
     ReminderPreferencesResponse,
@@ -49,8 +50,9 @@ from ..domain_schemas import (
     WorkingHoursResponse,
 )
 from ..errors import ApiError
+from ..schemas import COMMON_ERROR_RESPONSES
 
-router = APIRouter(tags=["application-domain"])
+router = APIRouter(tags=["application-domain"], responses=COMMON_ERROR_RESPONSES)
 IdempotencyKey = Annotated[
     str,
     Header(
@@ -213,7 +215,9 @@ async def replace_working_hours(
 
 
 @router.get(
-    "/doctors/{doctor_id}/leave", response_model=list[LeaveResponse], operation_id="listDoctorLeave"
+    "/doctors/{doctor_id}/leave",
+    response_model=LeaveListResponse,
+    operation_id="listDoctorLeave",
 )
 async def list_leave(
     doctor_id: UUID,
@@ -225,7 +229,8 @@ async def list_leave(
         items=[
             LeaveResponse.model_validate(item)
             for item in await DomainService(session, get_settings()).list_leaves(doctor_id)
-        ]
+        ],
+        next_cursor=None,
     )
 
 
@@ -438,7 +443,7 @@ async def add_symptoms(
 
 @router.get(
     "/appointments/{appointment_id}/visit",
-    response_model=VisitResponse,
+    response_model=VisitResponse | PatientVisitResponse,
     operation_id="getAppointmentVisit",
 )
 async def get_visit(
@@ -446,10 +451,11 @@ async def get_visit(
     request: Request,
     actor: ActorContext = Depends(require_role("patient", "doctor")),
     session: AsyncSession = Depends(get_session),
-) -> VisitResponse:
-    return VisitResponse.model_validate(
-        await _service(session, request).get_visit(actor, appointment_id)
-    )
+) -> VisitResponse | PatientVisitResponse:
+    body = await _service(session, request).get_visit(actor, appointment_id)
+    if actor.role == "patient":
+        return PatientVisitResponse.model_validate(body)
+    return VisitResponse.model_validate(body)
 
 
 @router.post(

@@ -582,6 +582,7 @@ class DomainService:
                         actor_id=_actor_uuid(actor),
                     )
                 )
+                calendar_reference = await self._calendar_event_reference(appointment)
                 await self._queue_integration(
                     appointment,
                     channel="email",
@@ -600,6 +601,8 @@ class DomainService:
                         "appointment_id": str(appointment.id),
                         "event_label": "Healthcare appointment cancellation",
                         "time_zone": "UTC",
+                        "action": "delete",
+                        "provider_event_reference": calendar_reference or str(appointment.id),
                     },
                 )
             doctor.schedule_version += 1
@@ -730,6 +733,7 @@ class DomainService:
                         actor_id=_actor_uuid(actor),
                     )
                 )
+                calendar_reference = await self._calendar_event_reference(appointment)
                 await self._queue_integration(
                     appointment,
                     channel="email",
@@ -753,6 +757,8 @@ class DomainService:
                         "appointment_id": str(appointment.id),
                         "event_label": "Healthcare appointment cancellation",
                         "time_zone": "UTC",
+                        "action": "delete",
+                        "provider_event_reference": calendar_reference or str(appointment.id),
                     },
                 )
             leave.version += 1
@@ -979,6 +985,7 @@ class DomainService:
                     actor_id=_actor_uuid(actor),
                 )
             )
+            calendar_reference = await self._calendar_event_reference(appointment)
             await self._queue_integration(
                 appointment,
                 channel="email",
@@ -997,6 +1004,8 @@ class DomainService:
                     "appointment_id": str(appointment.id),
                     "event_label": "Healthcare appointment cancellation",
                     "time_zone": "UTC",
+                    "action": "delete",
+                    "provider_event_reference": calendar_reference or str(appointment.id),
                 },
             )
             return ServiceResult(200, _wire(_appointment_summary(appointment)))
@@ -1089,6 +1098,7 @@ class DomainService:
                 if conflict is not None:
                     raise conflict from exc
                 raise
+            calendar_reference = await self._calendar_event_reference(appointment)
             await self._queue_integration(
                 appointment,
                 channel="email",
@@ -1109,6 +1119,8 @@ class DomainService:
                     "ends_at": new_ends.isoformat(),
                     "time_zone": "UTC",
                     "event_label": "Healthcare appointment",
+                    "action": "update",
+                    "provider_event_reference": calendar_reference or str(appointment.id),
                 },
             )
             return ServiceResult(200, _wire(_appointment_summary(appointment)))
@@ -1271,9 +1283,9 @@ class DomainService:
             )
             if visit is None:
                 raise ApiError(404, "RESOURCE_NOT_FOUND", "The requested resource was not found.")
-            return _wire(
-                await self._visit_dict(visit, include_content=actor.role in {"patient", "doctor"})
-            )
+            if actor.role == "patient":
+                return _wire(await self._patient_visit_dict(visit))
+            return _wire(await self._visit_dict(visit, include_content=True))
 
     async def update_visit(
         self, actor: ActorContext, visit_id: UUID, request: Any
@@ -1464,7 +1476,7 @@ class DomainService:
                 payload={
                     "source_record_reference": str(visit.id),
                     "source_version": visit.version,
-                    "task_kind": "post_visit_summary",
+                    "task_kind": "plain_language_summary",
                 },
             )
             await add_audit_event(
@@ -1858,6 +1870,36 @@ class DomainService:
         await self.session.flush()
         return operation
 
+    async def _calendar_event_reference(self, appointment: Appointment) -> str | None:
+        """Resolve the stable calendar event reference without exposing provider data.
+
+        A successful worker projection stores the provider event reference on its
+        integration operation.  Before that asynchronous projection completes, the
+        worker can deterministically resolve the reference from the original outbox
+        event UUID used as the calendar create idempotency key.
+        """
+
+        operation = await self.session.scalar(
+            select(IntegrationOperation)
+            .where(
+                IntegrationOperation.appointment_id == appointment.id,
+                IntegrationOperation.channel == "calendar",
+            )
+            .order_by(IntegrationOperation.created_at.desc())
+        )
+        if operation is None:
+            return None
+        if operation.provider_reference:
+            return operation.provider_reference
+        event = await self.session.get(OutboxEvent, operation.outbox_event_id)
+        if event is not None:
+            payload_reference = event.payload.get("provider_event_reference")
+            if isinstance(payload_reference, str) and payload_reference:
+                return payload_reference
+        # Direct ``calendar.sync`` rows use the durable event UUID as the worker
+        # idempotency key, which is also the provider event ID supplied on create.
+        return hashlib.sha256(str(operation.outbox_event_id).encode()).hexdigest()[:32]
+
     async def _visit_dict(self, visit: Visit, *, include_content: bool) -> dict[str, Any]:
         notes = list(
             (
@@ -1933,6 +1975,79 @@ class DomainService:
             "generated_artifacts": [
                 _artifact_dict(item, include_content=include_content) for item in artifacts
             ],
+        }
+
+    async def _patient_visit_dict(self, visit: Visit) -> dict[str, Any]:
+        """Build the intentionally narrow completed-visit patient projection."""
+
+        prescription = await self.session.scalar(
+            select(Prescription).where(Prescription.visit_id == visit.id)
+        )
+        items: list[PrescriptionItem] = []
+        if prescription is not None:
+            items = list(
+                (
+                    await self.session.execute(
+                        select(PrescriptionItem)
+                        .where(PrescriptionItem.prescription_id == prescription.id)
+                        .order_by(PrescriptionItem.created_at)
+                    )
+                ).scalars()
+            )
+        artifacts = list(
+            (
+                await self.session.execute(
+                    select(GeneratedArtifact)
+                    .where(
+                        GeneratedArtifact.visit_id == visit.id,
+                        GeneratedArtifact.artifact_type == "post_visit_summary",
+                    )
+                    .order_by(GeneratedArtifact.created_at)
+                )
+            ).scalars()
+        )
+        return {
+            "id": visit.id,
+            "appointment_id": visit.appointment_id,
+            "doctor_id": visit.doctor_id,
+            "status": "completed",
+            "version": visit.version,
+            "urgency": visit.urgency,
+            "prescription": None
+            if prescription is None
+            else {
+                "id": prescription.id,
+                "version": prescription.version,
+                "status": prescription.status,
+                "items": [
+                    {
+                        "id": item.id,
+                        "medication_name": item.medication_name,
+                        "dosage": item.dosage,
+                        "route": item.route,
+                        "frequency": item.frequency,
+                        "start_date": item.start_date,
+                        "end_date": item.end_date,
+                        "duration_days": item.duration_days,
+                        "instructions": item.instructions,
+                    }
+                    for item in items
+                ],
+            },
+            "generated_artifacts": [
+                {
+                    "id": item.id,
+                    "artifact_type": item.artifact_type,
+                    "status": item.status,
+                    "content": item.content,
+                    "created_at": item.created_at,
+                    "updated_at": item.updated_at,
+                }
+                for item in artifacts
+            ],
+            "created_at": visit.created_at,
+            "updated_at": visit.updated_at,
+            "completed_at": visit.completed_at,
         }
 
 

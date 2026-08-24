@@ -493,7 +493,7 @@ class BookingService:
                 payload={
                     "source_record_reference": str(symptom.id),
                     "source_version": 1,
-                    "task_kind": "pre_visit_brief",
+                    "task_kind": "pre_visit",
                 },
                 correlation_id=self.request_id,
             )

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import get_settings
 from ..db import get_session
 from ..errors import ApiError
-from ..schemas import HealthResponse
+from ..schemas import ErrorResponse, HealthResponse
 
 router = APIRouter(tags=["health"])
 
@@ -23,7 +23,17 @@ async def health_live() -> HealthResponse:
     return HealthResponse(status="ok")
 
 
-@router.get("/health/ready", response_model=HealthResponse, operation_id="getHealthReady")
+@router.get(
+    "/health/ready",
+    response_model=HealthResponse,
+    operation_id="getHealthReady",
+    responses={
+        503: {
+            "model": ErrorResponse,
+            "description": "A required dependency is unavailable.",
+        }
+    },
+)
 async def health_ready(session: AsyncSession = Depends(get_session)) -> HealthResponse:
     """Return coarse readiness when PostgreSQL is reachable."""
 

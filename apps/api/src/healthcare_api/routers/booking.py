@@ -14,6 +14,7 @@ from ..config import get_settings
 from ..db import get_session
 from ..errors import ApiError
 from ..schemas import (
+    COMMON_ERROR_RESPONSES,
     AppointmentResponse,
     AvailabilityResponse,
     AvailabilitySlot,
@@ -22,7 +23,7 @@ from ..schemas import (
     HoldResponse,
 )
 
-router = APIRouter(tags=["booking"])
+router = APIRouter(tags=["booking"], responses=COMMON_ERROR_RESPONSES)
 
 
 def _request_id(request: Request) -> str:

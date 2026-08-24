@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -58,6 +58,7 @@ class AvailabilitySlot(StrictModel):
     starts_at: datetime
     ends_at: datetime
     available: bool
+    conflict_reason: str | None = None
 
     @field_validator("starts_at", "ends_at")
     @classmethod
@@ -155,6 +156,21 @@ class ErrorResponseBody(StrictModel):
 class ErrorResponse(StrictModel):
     error: ErrorResponseBody
     request_id: str
+
+
+# These are the stable error statuses emitted by the protected API boundary.  Keeping
+# the response model on the router defaults makes the executable OpenAPI contract match
+# the exception handlers instead of documenting only FastAPI's validation response.
+COMMON_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: {"model": ErrorResponse, "description": "The request is malformed."},
+    401: {"model": ErrorResponse, "description": "Authentication is required."},
+    403: {"model": ErrorResponse, "description": "The caller is not permitted."},
+    404: {"model": ErrorResponse, "description": "The resource was not found."},
+    409: {"model": ErrorResponse, "description": "The current state prevents the command."},
+    422: {"model": ErrorResponse, "description": "Request validation failed."},
+    429: {"model": ErrorResponse, "description": "The request was rate limited."},
+    500: {"model": ErrorResponse, "description": "An unexpected server error occurred."},
+}
 
 
 class IdempotencyHeaders(StrictModel):
