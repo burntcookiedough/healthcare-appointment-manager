@@ -49,10 +49,13 @@ def _assert_reference_payload(value: Any, *, path: str = "payload") -> None:
     if isinstance(value, Mapping):
         for raw_key, child in value.items():
             key = re.sub(r"[^a-z0-9_]+", "_", str(raw_key).casefold()).strip("_")
-            if key.endswith(("_id", "_uuid", "_ref", "_reference")):
-                if isinstance(child, str) and "@" in child:
-                    raise ValueError(f"outbox payload field at {path}.{raw_key} is not allowed")
-            elif key.endswith("_name") or any(part in key for part in _SAFE_PAYLOAD_KEY_PARTS):
+            if key.endswith("_name") or any(part in key for part in _SAFE_PAYLOAD_KEY_PARTS):
+                raise ValueError(f"outbox payload field at {path}.{raw_key} is not allowed")
+            if (
+                key.endswith(("_id", "_uuid", "_ref", "_reference"))
+                and isinstance(child, str)
+                and "@" in child
+            ):
                 raise ValueError(f"outbox payload field at {path}.{raw_key} is not allowed")
             _assert_reference_payload(child, path=f"{path}.{raw_key}")
     elif isinstance(value, list):

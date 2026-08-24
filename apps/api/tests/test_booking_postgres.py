@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_asyncio
 from sqlalchemy import func, select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -21,7 +22,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from healthcare_api.auth import ActorContext
-from healthcare_api.booking import BookingService
+from healthcare_api.booking import BookingService, _slot_conflict_from_integrity
 from healthcare_api.config import Settings
 from healthcare_api.errors import ApiError
 from healthcare_api.models import (
@@ -182,6 +183,66 @@ async def test_concurrent_hold_contenders_have_exactly_one_winner(
             )
         )
     assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_availability_reports_booking_conflict_reason(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    doctor_id, actors, settings, starts_at = await seed_doctor(session_factory)
+    async with session_factory() as session:
+        created = await BookingService(session, settings).create_hold(
+            actors[0],
+            HoldCreateRequest(doctor_id=doctor_id, starts_at=starts_at, duration_minutes=30),
+            "availability-hold-key",
+        )
+        assert created.error is None
+
+    async with session_factory() as session:
+        slots = await BookingService(session, settings).availability(
+            doctor_id,
+            starts_at,
+            starts_at + timedelta(hours=1),
+            30,
+        )
+
+    assert slots[0]["available"] is False
+    assert slots[0]["conflict_reason"] == "Slot booked"
+    assert slots[1]["available"] is True
+    assert slots[1]["conflict_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_asyncpg_exclusion_violation_maps_to_slot_conflict(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    doctor_id, actors, settings, starts_at = await seed_doctor(session_factory)
+    async with session_factory() as session:
+        created = await BookingService(session, settings).create_hold(
+            actors[0],
+            HoldCreateRequest(doctor_id=doctor_id, starts_at=starts_at, duration_minutes=30),
+            "constraint-first-hold-key",
+        )
+        assert created.error is None
+
+    async with session_factory() as session:
+        with pytest.raises(IntegrityError) as raised:
+            async with session.begin():
+                session.add(
+                    SlotHold(
+                        patient_id=UUID(actors[0].id),
+                        doctor_id=doctor_id,
+                        starts_at=starts_at,
+                        ends_at=starts_at + timedelta(minutes=30),
+                        expires_at=starts_at + timedelta(hours=1),
+                    )
+                )
+                await session.flush()
+
+    conflict = _slot_conflict_from_integrity(raised.value, doctor_id)
+    assert conflict is not None
+    assert conflict.status_code == 409
+    assert conflict.code == "SLOT_CONFLICT"
 
 
 @pytest.mark.asyncio

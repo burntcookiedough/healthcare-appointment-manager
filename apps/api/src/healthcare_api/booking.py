@@ -49,9 +49,18 @@ def _integrity_constraint_name(exc: IntegrityError) -> str | None:
     """Read only the database constraint identifier, never the SQL/value text."""
 
     orig = getattr(exc, "orig", None)
-    diag = getattr(orig, "diag", None)
-    name = getattr(diag, "constraint_name", None)
-    return str(name) if name else None
+    for candidate in (
+        orig,
+        getattr(orig, "__cause__", None),
+        getattr(exc, "__cause__", None),
+    ):
+        if candidate is None:
+            continue
+        diag = getattr(candidate, "diag", None)
+        name = getattr(diag, "constraint_name", None) or getattr(candidate, "constraint_name", None)
+        if name:
+            return str(name)
+    return None
 
 
 def _slot_conflict_from_integrity(exc: IntegrityError, doctor_id: UUID) -> ApiError | None:
@@ -64,6 +73,25 @@ def _slot_conflict_from_integrity(exc: IntegrityError, doctor_id: UUID) -> ApiEr
             details={"doctor_id": str(doctor_id)},
         )
     return None
+
+
+def _availability_conflict_reason(
+    blockers: list[tuple[str, datetime, datetime]],
+    slot_start: datetime,
+    slot_end: datetime,
+) -> str | None:
+    """Return the user-safe reason for an occupied availability slot."""
+
+    overlapping_kinds = {
+        kind
+        for kind, blocker_start, blocker_end in blockers
+        if blocker_start < slot_end and blocker_end > slot_start
+    }
+    if not overlapping_kinds:
+        return None
+    if "leave" in overlapping_kinds:
+        return "Doctor on approved leave"
+    return "Slot booked"
 
 
 @dataclass(slots=True)
@@ -568,18 +596,18 @@ class BookingService:
                 ends_at=ends_at,
                 now=now,
             )
-            slots = [
-                {
-                    "doctor_id": doctor_id,
-                    "starts_at": slot_start,
-                    "ends_at": slot_end,
-                    "available": not any(
-                        blocker_start < slot_end and blocker_end > slot_start
-                        for _, blocker_start, blocker_end in blockers
-                    ),
-                }
-                for slot_start, slot_end in candidates
-            ]
+            slots: list[dict[str, Any]] = []
+            for slot_start, slot_end in candidates:
+                conflict_reason = _availability_conflict_reason(blockers, slot_start, slot_end)
+                slots.append(
+                    {
+                        "doctor_id": doctor_id,
+                        "starts_at": slot_start,
+                        "ends_at": slot_end,
+                        "available": conflict_reason is None,
+                        "conflict_reason": conflict_reason,
+                    }
+                )
             slots.sort(key=lambda item: cast(datetime, item["starts_at"]))
             return slots
 

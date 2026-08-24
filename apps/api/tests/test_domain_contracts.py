@@ -7,14 +7,20 @@ import hashlib
 import hmac
 import json
 import sys
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 
 from healthcare_api.auth import verify_access_token
+from healthcare_api.booking import (
+    _availability_conflict_reason,
+    _integrity_constraint_name,
+    _slot_conflict_from_integrity,
+)
 from healthcare_api.config import Settings
 from healthcare_api.domain import deterministic_occurrences
 from healthcare_api.domain_schemas import PatientVisitResponse
@@ -65,6 +71,21 @@ def test_supabase_jwt_checks_signature_issuer_audience_and_expiry() -> None:
         with pytest.raises(ApiError) as raised:
             verify_access_token(_token(invalid, "synthetic-secret"), settings)
         assert raised.value.code == "AUTHENTICATION_REQUIRED"
+
+
+def test_env_example_matches_api_jwt_settings() -> None:
+    environment: dict[str, str] = {}
+    for raw_line in (Path(__file__).parents[3] / ".env.example").read_text().splitlines():
+        line = raw_line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            environment[key] = value
+
+    assert environment["SUPABASE_JWT_ISSUER"].endswith("/auth/v1")
+    assert environment["SUPABASE_JWT_AUDIENCE"] == "authenticated"
+    assert "SUPABASE_JWT_PUBLIC_KEY" in environment
+    assert environment["AUTH_ALLOW_LOCAL_TEST_TOKENS"] == "true"
+    assert "SUPABASE_URL" not in environment
 
 
 def test_medication_schedule_uses_only_structured_frequency() -> None:
@@ -144,6 +165,55 @@ def test_api_outbox_payload_guard_rejects_raw_contact_data() -> None:
     _assert_reference_payload({"appointment_id": str(uuid4()), "recipient_reference": str(uuid4())})
     with pytest.raises(ValueError):
         _assert_reference_payload({"recipient_reference": "synthetic@example.test"})
+    with pytest.raises(ValueError):
+        _assert_reference_payload({"notes_ref": str(uuid4())})
+
+
+def test_asyncpg_exclusion_constraint_maps_to_safe_slot_conflict() -> None:
+    class RawAsyncpgError:
+        constraint_name = "ex_slot_holds_active_overlap"
+
+    class AdaptedDbapiError:
+        __cause__ = RawAsyncpgError()
+
+    error = IntegrityError(
+        "INSERT ... synthetic value ...",
+        {"value": "synthetic clinical text"},
+        AdaptedDbapiError(),
+    )
+    doctor_id = uuid4()
+
+    assert _integrity_constraint_name(error) == "ex_slot_holds_active_overlap"
+    conflict = _slot_conflict_from_integrity(error, doctor_id)
+    assert conflict is not None
+    assert conflict.status_code == 409
+    assert conflict.code == "SLOT_CONFLICT"
+    assert conflict.details == {"doctor_id": str(doctor_id)}
+    assert "synthetic" not in conflict.message
+
+
+def test_availability_conflict_reason_prioritizes_leave_over_booking() -> None:
+    slot_start = datetime(2026, 8, 24, 10, tzinfo=UTC)
+    slot_end = slot_start + timedelta(minutes=30)
+    blockers = [
+        ("appointment", slot_start, slot_end),
+        ("leave", slot_start, slot_end),
+    ]
+
+    assert _availability_conflict_reason(blockers, slot_start, slot_end) == (
+        "Doctor on approved leave"
+    )
+    assert (
+        _availability_conflict_reason([("hold", slot_start, slot_end)], slot_start, slot_end)
+        == "Slot booked"
+    )
+    assert _availability_conflict_reason([], slot_start, slot_end) is None
+    assert (
+        _availability_conflict_reason(
+            [("appointment", slot_end, slot_end + timedelta(minutes=30))], slot_start, slot_end
+        )
+        is None
+    )
 
 
 def test_openapi_marks_all_idempotent_commands_with_required_header() -> None:
