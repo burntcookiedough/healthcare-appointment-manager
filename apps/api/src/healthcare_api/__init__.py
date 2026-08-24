@@ -1,1 +1,5 @@
-"""Healthcare API package. Feature implementation begins after Phase 0."""
+"""Healthcare appointment and follow-up API."""
+
+__all__ = ["__version__"]
+
+__version__ = "0.0.0"
