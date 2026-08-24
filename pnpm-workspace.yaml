@@ -2,4 +2,7 @@ packages:
   - apps/web
   - packages/*
 
-onlyBuiltDependencies: []
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true
