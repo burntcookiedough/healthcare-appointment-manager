@@ -6,9 +6,10 @@ from .adapters import HttpTransport
 from .config import WorkerSettings
 from .envelope import EventEnvelope
 from .handlers import build_default_registry, production_handler_dependencies
+from .llm import PostgresSummaryRepository
 from .outbox import OutboxPoller, PostgresOutboxStore
 from .ports import TrustedDataResolver
-from .processor import process_envelope
+from .processor import process_envelope_async
 from .registry import HandlerRegistry
 from .reminders import MedicationReminderDispatcher, ReminderOccurrenceStore
 from .resolver import PostgresTrustedDataResolver
@@ -36,7 +37,10 @@ async def build_outbox_poller(
     resolved_resolver = resolver or PostgresTrustedDataResolver(store.pool)
     try:
         dependencies = production_handler_dependencies(
-            settings, resolver=resolved_resolver, transport=transport
+            settings,
+            resolver=resolved_resolver,
+            transport=transport,
+            summary_repository=PostgresSummaryRepository(store.pool),
         )
         if reminder_store is not None:
             dependencies.medication_reminders = MedicationReminderDispatcher(
@@ -45,32 +49,32 @@ async def build_outbox_poller(
                 occurrence_store=reminder_store,
             )
         registry = build_default_registry(dependencies)
-    except Exception:
+
+        async def processor(envelope: EventEnvelope) -> ProcessingResult:
+            bind = getattr(resolved_resolver, "bind", None)
+            if callable(bind):
+                async with bind(envelope):
+                    return await process_envelope_async(
+                        envelope,
+                        registry=registry,
+                        supported_version=settings.event_version,
+                    )
+            return await process_envelope_async(
+                envelope,
+                registry=registry,
+                supported_version=settings.event_version,
+            )
+
+        poller = OutboxPoller(
+            store,
+            processor,
+            max_concurrency=settings.max_concurrency,
+            batch_size=settings.outbox_batch_size,
+            lease_seconds=settings.outbox_lease_seconds,
+            poll_interval_seconds=settings.outbox_poll_interval_seconds,
+            retry_policy=retry_policy_from_settings(settings),
+        )
+    except BaseException:
         await store.close()
         raise
-
-    async def processor(envelope: EventEnvelope) -> ProcessingResult:
-        bind = getattr(resolved_resolver, "bind", None)
-        if callable(bind):
-            async with bind(envelope):
-                return process_envelope(
-                    envelope,
-                    registry=registry,
-                    supported_version=settings.event_version,
-                )
-        return process_envelope(
-            envelope,
-            registry=registry,
-            supported_version=settings.event_version,
-        )
-
-    poller = OutboxPoller(
-        store,
-        processor,
-        max_concurrency=settings.max_concurrency,
-        batch_size=settings.outbox_batch_size,
-        lease_seconds=settings.outbox_lease_seconds,
-        poll_interval_seconds=settings.outbox_poll_interval_seconds,
-        retry_policy=retry_policy_from_settings(settings),
-    )
     return poller, store, registry

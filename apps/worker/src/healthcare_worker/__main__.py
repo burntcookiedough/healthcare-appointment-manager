@@ -101,7 +101,11 @@ async def run_poller(
             "status": "unavailable",
             "service": settings.service_name,
             "mode": "poller",
-            "error_code": "WORKER_DATABASE_NOT_CONFIGURED",
+            "error_code": (
+                "WORKER_DATABASE_NOT_CONFIGURED"
+                if not settings.database_url
+                else "WORKER_STARTUP_FAILED"
+            ),
         }
     except Exception:
         return {
@@ -158,7 +162,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             status = readiness_status_sync(lambda: False, service=settings.service_name)
         print(json.dumps(status, sort_keys=True))
-        return 0
+        return 0 if status.get("status") == "ok" else 1
     if args.poller_dry_run:
         status = asyncio.run(run_poller(get_settings(), dry_run=True))
         print(json.dumps(status, sort_keys=True))

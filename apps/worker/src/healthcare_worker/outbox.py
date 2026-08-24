@@ -153,7 +153,7 @@ class OutboxStore(Protocol):
 
 CLAIM_BATCH_SQL = """
 WITH candidates AS (
-    SELECT id
+    SELECT id, status AS previous_status
     FROM outbox_events
     WHERE (
         (status IN ('pending', 'retrying') AND next_attempt_at <= now())
@@ -172,7 +172,8 @@ WHERE event.id = candidates.id
 RETURNING event.id, event.event_type, event.aggregate_type, event.aggregate_id,
           event.appointment_id, event.dedupe_key, event.payload, event.status,
           event.attempt_count, event.next_attempt_at, event.last_error_code,
-          event.created_at, event.processed_at, event.version, event.correlation_id
+          event.created_at, event.processed_at, event.version, event.correlation_id,
+          candidates.previous_status
 """
 
 MARK_SUCCEEDED_SQL = """
@@ -276,7 +277,10 @@ class PostgresOutboxStore:
             rows = await connection.fetch(CLAIM_BATCH_SQL, limit, lease_seconds)
             claimed: list[ClaimedOutboxEvent] = []
             for row in rows:
-                record = OutboxRecord.from_mapping(row)
+                record = OutboxRecord.from_mapping(
+                    row,
+                    recovered=str(row.get("previous_status", "")).casefold() == "processing",
+                )
                 lease_until = record.next_attempt_at or datetime.now(UTC) + timedelta(
                     seconds=lease_seconds
                 )

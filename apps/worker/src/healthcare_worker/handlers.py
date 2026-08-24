@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -69,8 +71,14 @@ def production_handler_dependencies(
     *,
     resolver: TrustedDataResolver | None,
     transport: HttpTransport | None = None,
+    summary_repository: SummaryRepository | None = None,
 ) -> HandlerDependencies:
-    """Build configured adapters; each provider is fail-closed when incomplete."""
+    """Build configured adapters; each provider is fail-closed when incomplete.
+
+    Production must inject a repository backed by the API database.  Leaving it
+    unset deliberately makes LLM events terminal instead of silently accepting
+    generated output into an in-memory-only collection.
+    """
 
     return HandlerDependencies(
         email=SendGridEmailAdapter(
@@ -101,7 +109,7 @@ def production_handler_dependencies(
             validation_retries=settings.llm_validation_retries,
             transport=transport,
         ),
-        summary_repository=InMemorySummaryRepository(),
+        summary_repository=summary_repository,
     )
 
 
@@ -123,7 +131,9 @@ def _processing_result(envelope: EventEnvelope, adapter_result: AdapterResult) -
     )
 
 
-def _email_handler(dependencies: HandlerDependencies) -> EventHandler:
+def _email_handler(
+    dependencies: HandlerDependencies,
+) -> Callable[[EventEnvelope], ProcessingResult]:
     def handle(envelope: EventEnvelope) -> ProcessingResult:
         try:
             request = EmailRequest.model_validate(envelope.safe_payload.as_dict())
@@ -138,7 +148,9 @@ def _email_handler(dependencies: HandlerDependencies) -> EventHandler:
     return handle
 
 
-def _calendar_handler(dependencies: HandlerDependencies) -> EventHandler:
+def _calendar_handler(
+    dependencies: HandlerDependencies,
+) -> Callable[[EventEnvelope], ProcessingResult]:
     def handle(envelope: EventEnvelope) -> ProcessingResult:
         payload = envelope.safe_payload.as_dict()
         # Older API cancellation rows carried a cancellation label but omitted
@@ -166,7 +178,7 @@ def _calendar_handler(dependencies: HandlerDependencies) -> EventHandler:
 
 
 def _llm_handler(dependencies: HandlerDependencies) -> EventHandler:
-    def handle(envelope: EventEnvelope) -> ProcessingResult:
+    def handle(envelope: EventEnvelope) -> ProcessingResult | Awaitable[ProcessingResult]:
         try:
             request = ClinicalSummaryRequest.model_validate(envelope.safe_payload.as_dict())
         except ValidationError:
@@ -209,7 +221,20 @@ def _llm_handler(dependencies: HandlerDependencies) -> EventHandler:
                 metadata=metadata,
                 output=output,
             )
-            repository.persist_summary(record)
+            persisted = repository.persist_summary(record)
+            if inspect.isawaitable(persisted):
+
+                async def await_persistence() -> ProcessingResult:
+                    try:
+                        await persisted
+                    except Exception:
+                        return ProcessingResult.retryable(
+                            envelope.event_id,
+                            error_code="SUMMARY_PERSISTENCE_ERROR",
+                        )
+                    return _processing_result(envelope, result)
+
+                return await_persistence()
         except (ValidationError, ValueError, TypeError):
             return ProcessingResult.terminal(envelope.event_id, error_code="LLM_INVALID_OUTPUT")
         except Exception:
@@ -222,7 +247,9 @@ def _llm_handler(dependencies: HandlerDependencies) -> EventHandler:
     return handle
 
 
-def _appointment_confirmed_handler(dependencies: HandlerDependencies) -> EventHandler:
+def _appointment_confirmed_handler(
+    dependencies: HandlerDependencies,
+) -> Callable[[EventEnvelope], ProcessingResult]:
     """Translate the API's combined confirmation event into two projections."""
 
     def handle(envelope: EventEnvelope) -> ProcessingResult:
@@ -311,7 +338,9 @@ def _appointment_confirmed_handler(dependencies: HandlerDependencies) -> EventHa
     return handle
 
 
-def _medication_reminder_handler(dependencies: HandlerDependencies) -> EventHandler:
+def _medication_reminder_handler(
+    dependencies: HandlerDependencies,
+) -> Callable[[EventEnvelope], ProcessingResult]:
     email_handler = _email_handler(dependencies)
 
     def handle(envelope: EventEnvelope) -> ProcessingResult:

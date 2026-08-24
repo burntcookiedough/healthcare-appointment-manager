@@ -30,7 +30,14 @@ from healthcare_worker.events import (
     translated_event_types,
 )
 from healthcare_worker.handlers import HandlerDependencies, build_default_registry
-from healthcare_worker.llm import InMemorySummaryRepository
+from healthcare_worker.llm import (
+    GeneratedSummaryRecord,
+    InMemorySummaryRepository,
+    PostgresSummaryRepository,
+    PreVisitOutput,
+    PromptMetadata,
+    output_schema_for_task,
+)
 from healthcare_worker.outbox import (
     InMemoryOutboxStore,
     OutboxPoller,
@@ -46,11 +53,12 @@ from healthcare_worker.ports import (
     SummarySource,
     TrustedDataResolutionError,
 )
-from healthcare_worker.processor import process_envelope
+from healthcare_worker.processor import process_envelope, process_envelope_async
 from healthcare_worker.reminders import (
     InMemoryReminderOccurrenceStore,
     MedicationReminderDispatcher,
     MedicationReminderRequest,
+    PostgresReminderOccurrenceStore,
     PrescriptionSchedule,
     generate_medication_occurrences,
 )
@@ -191,6 +199,30 @@ def test_calendar_delete_resolves_trusted_provider_reference() -> None:
     assert transport.requests[0][1].endswith("/trusted-event-1")
 
 
+@pytest.mark.parametrize("status_code", [404, 410])
+def test_calendar_delete_is_idempotent_when_provider_event_is_absent(status_code: int) -> None:
+    appointment_id = uuid4()
+    resolver = InMemoryTrustedDataResolver(
+        calendar_credentials={"default": OAuthCredentials(access_token="synthetic-token")},
+        calendar_event_references={str(appointment_id): "trusted-event-1"},
+    )
+    transport = FakeTransport(HttpResponse(status_code, {}))
+    adapter = GoogleCalendarOAuthAdapter(
+        client_id="client",
+        client_secret="secret",
+        resolver=resolver,
+        transport=transport,
+    )
+
+    result = adapter.upsert_event(
+        CalendarRequest(appointment_id=appointment_id, action="delete"),
+        idempotency_key="event:calendar:delete-replay",
+    )
+
+    assert result.is_success
+    assert result.provider_reference == "trusted-event-1"
+
+
 def test_canonical_and_legacy_llm_task_kinds_are_explicit() -> None:
     for task_kind in ("pre_visit", "post_visit", "plain_language_summary"):
         assert ClinicalSummaryRequest(task_kind=task_kind).task_kind == task_kind
@@ -289,6 +321,50 @@ def test_postgres_claim_rolls_back_when_jsonb_conversion_fails() -> None:
 
     asyncio.run(scenario())
     assert pool.connection.transaction_context.exception_type is ValueError
+
+
+def test_postgres_claim_marks_recovered_processing_rows() -> None:
+    class Transaction:
+        async def __aenter__(self) -> Transaction:
+            return self
+
+        async def __aexit__(self, *_args: object) -> bool:
+            return False
+
+    class Connection:
+        def transaction(self) -> Transaction:
+            return Transaction()
+
+        async def fetch(self, *_args: object) -> list[dict[str, object]]:
+            return [
+                {
+                    "id": uuid4(),
+                    "event_type": EventType.EMAIL_NOTIFICATION.value,
+                    "aggregate_type": "appointment",
+                    "aggregate_id": uuid4(),
+                    "dedupe_key": "recovered:1",
+                    "payload": {},
+                    "status": "processing",
+                    "previous_status": "processing",
+                    "attempt_count": 3,
+                    "next_attempt_at": datetime.now(UTC),
+                }
+            ]
+
+    class Acquire:
+        async def __aenter__(self) -> Connection:
+            return Connection()
+
+        async def __aexit__(self, *_args: object) -> bool:
+            return False
+
+    class Pool:
+        def acquire(self) -> Acquire:
+            return Acquire()
+
+    claimed = asyncio.run(PostgresOutboxStore(Pool()).claim_batch(limit=1, lease_seconds=10))
+    assert len(claimed) == 1
+    assert claimed[0].record.recovered is True
 
 
 def test_outbox_poller_persists_retry_then_success_and_recovers_leases() -> None:
@@ -658,6 +734,112 @@ def test_llm_structured_output_and_handler_persistence() -> None:
     )
 
 
+def test_openai_strict_schema_requires_every_declared_property() -> None:
+    schema = output_schema_for_task("post_visit")
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == set(schema["properties"])
+    assert set(schema["properties"]["next_steps"]) >= {"type"}
+    assert set(schema["properties"]["warning_signs"]) >= {"type"}
+
+
+def test_async_summary_repository_is_awaited_before_success() -> None:
+    source_id = uuid4()
+    adapter = DeterministicFakeClinicalLLMAdapter()
+
+    class AsyncRepository:
+        def __init__(self) -> None:
+            self.records: list[GeneratedSummaryRecord] = []
+
+        async def persist_summary(self, record: GeneratedSummaryRecord) -> None:
+            self.records.append(record)
+
+    repository = AsyncRepository()
+    dependencies = HandlerDependencies(
+        email=DeterministicFakeEmailAdapter(),
+        calendar=DeterministicFakeGoogleCalendarAdapter(),
+        clinical_llm=adapter,
+        summary_repository=repository,
+    )
+    request = ClinicalSummaryRequest(
+        source_record_reference=source_id,
+        source_version=1,
+        task_kind="pre_visit",
+    )
+    result = asyncio.run(
+        process_envelope_async(
+            envelope(EventType.CLINICAL_LLM_SUMMARY.value, request.model_dump(mode="json")),
+            registry=build_default_registry(dependencies),
+        )
+    )
+    assert result.is_success
+    assert len(repository.records) == 1
+
+
+def test_postgres_summary_repository_updates_pending_artifact_durably() -> None:
+    class FakeTransaction:
+        async def __aenter__(self) -> FakeTransaction:
+            return self
+
+        async def __aexit__(self, *_args: object) -> bool:
+            return False
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.statement = ""
+            self.parameters: tuple[object, ...] = ()
+
+        def transaction(self) -> FakeTransaction:
+            return FakeTransaction()
+
+        async def execute(self, statement: str, *parameters: object) -> str:
+            self.statement = statement
+            self.parameters = parameters
+            return "UPDATE 1"
+
+    class FakeAcquire:
+        def __init__(self, connection: FakeConnection) -> None:
+            self.connection = connection
+
+        async def __aenter__(self) -> FakeConnection:
+            return self.connection
+
+        async def __aexit__(self, *_args: object) -> bool:
+            return False
+
+    class FakePool:
+        def __init__(self) -> None:
+            self.connection = FakeConnection()
+
+        def acquire(self) -> FakeAcquire:
+            return FakeAcquire(self.connection)
+
+    source_id = uuid4()
+    record = GeneratedSummaryRecord(
+        source_record_reference=source_id,
+        source_version=1,
+        task_kind="pre_visit",
+        metadata=PromptMetadata(
+            task_kind="pre_visit",
+            prompt_version="pre_visit_summary.v1",
+            schema_version="clinical_summary.v1",
+            provider="synthetic",
+            model="synthetic-model",
+        ),
+        output=PreVisitOutput(
+            urgency="Low",
+            chief_complaint="Synthetic concern",
+            suggested_questions=["One?", "Two?", "Three?"],
+        ),
+    )
+    pool = FakePool()
+
+    asyncio.run(PostgresSummaryRepository(pool).persist_summary(record))
+
+    assert "UPDATE generated_artifacts" in pool.connection.statement
+    assert pool.connection.parameters[0] == source_id
+    assert "Synthetic concern" in str(pool.connection.parameters[3])
+
+
 def test_medication_reminders_are_timezone_aware_and_restart_safe() -> None:
     prescription_id = uuid4()
     schedule = PrescriptionSchedule(
@@ -707,6 +889,60 @@ def test_medication_reminders_are_timezone_aware_and_restart_safe() -> None:
     assert dispatcher.dispatch(request, idempotency_key="event:occurrence").is_success
     assert dispatcher.dispatch(request, idempotency_key="event:occurrence").is_success
     assert len(email.calls) == 1
+
+
+def test_postgres_reminder_cancellation_is_the_dispatch_fence() -> None:
+    class Executor:
+        def __init__(self) -> None:
+            self.executed: list[tuple[str, tuple[object, ...]]] = []
+            self.cancelled = True
+
+        def execute(self, statement: str, *parameters: object) -> int:
+            self.executed.append((statement, parameters))
+            return 1
+
+        def fetch_value(self, statement: str, *_parameters: object) -> bool:
+            if "status = 'cancelled'" in statement:
+                return self.cancelled
+            return False
+
+    prescription_id = uuid4()
+    prescription_item_id = uuid4()
+    schedule = PrescriptionSchedule(
+        prescription_id=prescription_id,
+        prescription_version=2,
+        prescription_item_id=prescription_item_id,
+        medication_reference=str(prescription_item_id),
+        start_date=date(2026, 8, 24),
+        duration_days=1,
+        frequency="once_daily",
+        time_zone="UTC",
+    )
+    occurrence = generate_medication_occurrences(schedule)[0]
+    executor = Executor()
+    store = PostgresReminderOccurrenceStore(executor)
+    assert store.upsert(occurrence)
+    assert "reminder_occurrences" in executor.executed[0][0]
+    assert "prescription_item_id" in executor.executed[0][0]
+    assert store.is_cancelled(occurrence.occurrence_id)
+
+    email = DeterministicFakeEmailAdapter()
+    resolver = InMemoryTrustedDataResolver(
+        prescriptions={f"{prescription_id}:2": schedule},
+    )
+    dispatcher = MedicationReminderDispatcher(
+        resolver=resolver, email=email, occurrence_store=store
+    )
+    result = dispatcher.dispatch(
+        MedicationReminderRequest(
+            prescription_id=prescription_id,
+            prescription_version=2,
+            occurrence_id=occurrence.occurrence_id,
+        ),
+        idempotency_key="event:cancelled-occurrence",
+    )
+    assert result.error_code == "REMINDER_CANCELLED"
+    assert email.calls == []
 
 
 def test_payload_boundary_rejects_nested_phi_and_provider_secrets() -> None:

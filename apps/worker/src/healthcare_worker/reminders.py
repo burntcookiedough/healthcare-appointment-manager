@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import suppress
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .ports import AdapterResult, EmailPort, EmailRequest, TrustedDataResolver
 
@@ -24,6 +25,9 @@ class PrescriptionSchedule(BaseModel):
         ge=1,
         validation_alias=AliasChoices("prescription_version", "version"),
     )
+    # ``prescription_id`` versions the reviewed prescription envelope; this
+    # stable item identity is the foreign key used by PostgreSQL reminder rows.
+    prescription_item_id: UUID | None = None
     medication_reference: str = Field(min_length=1, max_length=128)
     medication_name: str | None = Field(default=None, min_length=1, max_length=200)
     dosage_amount: str | None = Field(default=None, min_length=1, max_length=120)
@@ -39,6 +43,17 @@ class PrescriptionSchedule(BaseModel):
     )
     interval_hours: int | None = Field(default=None, ge=1, le=24)
     time_zone: str = Field(min_length=1, max_length=64)
+
+    @model_validator(mode="after")
+    def infer_item_identity(self) -> PrescriptionSchedule:
+        """Accept legacy references while retaining UUID identity when present."""
+
+        if self.prescription_item_id is None:
+            with suppress(TypeError, ValueError):
+                self.prescription_item_id = UUID(self.medication_reference)
+            # Local deterministic fixtures may use a non-UUID reference; the
+            # PostgreSQL store rejects those schedules before writing rows.
+        return self
 
     @field_validator("times_of_day")
     @classmethod
@@ -105,6 +120,7 @@ class ReminderOccurrence(BaseModel):
     local_time: time
     time_zone: str
     due_at: datetime
+    prescription_item_id: UUID | None = None
 
 
 def _resolve_local_datetime(local_date: date, local_time: time, zone: ZoneInfo) -> datetime:
@@ -157,7 +173,8 @@ def generate_medication_occurrences(
         for local_time in times:
             due_local = _resolve_local_datetime(current, local_time, zone)
             stable_key = (
-                f"{resolved.prescription_id}:{resolved.prescription_version}:"
+                f"{resolved.prescription_item_id or resolved.medication_reference}:"
+                f"{resolved.prescription_version}:"
                 f"{current.isoformat()}:{local_time.isoformat()}:{resolved.time_zone}"
             )
             occurrences.append(
@@ -169,6 +186,7 @@ def generate_medication_occurrences(
                     local_time=local_time,
                     time_zone=resolved.time_zone,
                     due_at=due_local.astimezone(UTC),
+                    prescription_item_id=resolved.prescription_item_id,
                 )
             )
         current += timedelta(days=1)
@@ -189,6 +207,9 @@ class ReminderOccurrenceStore(Protocol):
 
     def is_sent(self, occurrence_id: UUID) -> bool:
         """Read the durable sent fence."""
+
+    def is_cancelled(self, occurrence_id: UUID) -> bool:
+        """Read the durable cancellation fence before contacting a provider."""
 
     def cancel_superseded(self, prescription_id: UUID, keep_version: int) -> int:
         """Cancel unsent occurrences from older prescription versions."""
@@ -216,6 +237,9 @@ class InMemoryReminderOccurrenceStore:
 
     def is_sent(self, occurrence_id: UUID) -> bool:
         return occurrence_id in self.sent
+
+    def is_cancelled(self, occurrence_id: UUID) -> bool:
+        return occurrence_id in self.cancelled
 
     def cancel_superseded(self, prescription_id: UUID, keep_version: int) -> int:
         cancelled = 0
@@ -250,38 +274,53 @@ class PostgresReminderOccurrenceStore:
     """
 
     UPSERT_SQL = """
-    INSERT INTO medication_reminder_occurrences
-        (occurrence_id, prescription_id, prescription_version, due_at, sent_at)
-    VALUES ($1, $2, $3, $4, NULL)
-    ON CONFLICT (occurrence_id) DO NOTHING
+    INSERT INTO reminder_occurrences
+        (id, prescription_item_id, prescription_version, occurrence_at, status, dedupe_key)
+    VALUES ($1, $2, $3, $4, 'pending', $5)
+    ON CONFLICT (dedupe_key) DO NOTHING
     """
     MARK_SENT_SQL = """
-    UPDATE medication_reminder_occurrences
-    SET sent_at = now()
-    WHERE occurrence_id = $1 AND sent_at IS NULL
+    UPDATE reminder_occurrences
+    SET status = 'sent', sent_at = now()
+    WHERE id = $1 AND status = 'pending' AND sent_at IS NULL
     """
     CANCEL_SUPERSEDED_SQL = """
-    UPDATE medication_reminder_occurrences
-    SET cancelled_at = now()
-    WHERE prescription_id = $1 AND prescription_version <> $2
-      AND sent_at IS NULL AND cancelled_at IS NULL
+    UPDATE reminder_occurrences AS occurrence
+    SET status = 'cancelled'
+    FROM prescription_items AS item
+    WHERE occurrence.prescription_item_id = item.id
+      AND item.prescription_id = $1
+      AND occurrence.prescription_version <> $2
+      AND occurrence.status NOT IN ('sent', 'cancelled')
     """
     IS_SENT_SQL = """
-    SELECT sent_at IS NOT NULL
-    FROM medication_reminder_occurrences
-    WHERE occurrence_id = $1
+    SELECT status = 'sent' OR sent_at IS NOT NULL
+    FROM reminder_occurrences
+    WHERE id = $1
+    """
+    IS_CANCELLED_SQL = """
+    SELECT status = 'cancelled'
+    FROM reminder_occurrences
+    WHERE id = $1
     """
 
     def __init__(self, executor: ReminderDatabaseExecutor) -> None:
         self._executor = executor
 
     def upsert(self, occurrence: ReminderOccurrence) -> bool:
+        if occurrence.prescription_item_id is None:
+            raise ValueError("prescription item identity is required for PostgreSQL reminders")
+        dedupe_key = (
+            f"{occurrence.prescription_item_id}:{occurrence.prescription_version}:"
+            f"{occurrence.due_at.isoformat()}"
+        )
         status = self._executor.execute(
             self.UPSERT_SQL,
             occurrence.occurrence_id,
-            occurrence.prescription_id,
+            occurrence.prescription_item_id,
             occurrence.prescription_version,
             occurrence.due_at,
+            dedupe_key,
         )
         return _affected_one(status)
 
@@ -290,6 +329,9 @@ class PostgresReminderOccurrenceStore:
 
     def is_sent(self, occurrence_id: UUID) -> bool:
         return bool(self._executor.fetch_value(self.IS_SENT_SQL, occurrence_id))
+
+    def is_cancelled(self, occurrence_id: UUID) -> bool:
+        return bool(self._executor.fetch_value(self.IS_CANCELLED_SQL, occurrence_id))
 
     def cancel_superseded(self, prescription_id: UUID, keep_version: int) -> int:
         status = self._executor.execute(self.CANCEL_SUPERSEDED_SQL, prescription_id, keep_version)
@@ -354,7 +396,7 @@ class MedicationReminderDispatcher:
     ) -> AdapterResult:
         if self._occurrence_store.is_sent(request.occurrence_id):
             return AdapterResult.success(provider_reference=str(request.occurrence_id))
-        if request.occurrence_id in getattr(self._occurrence_store, "cancelled", set()):
+        if self._occurrence_store.is_cancelled(request.occurrence_id):
             return AdapterResult.terminal("REMINDER_CANCELLED")
         raw_schedule = self._resolver.resolve_prescription_schedule(
             request.prescription_id, request.prescription_version

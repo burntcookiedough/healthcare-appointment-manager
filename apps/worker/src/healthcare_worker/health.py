@@ -55,7 +55,7 @@ def health_payload(status: dict[str, str]) -> dict[str, Any]:
 
     return {
         "status": status.get("status", "unavailable"),
-        "service": status.get("service", "worker"),
+        "service": status.get("service", "healthcare-worker"),
     }
 
 

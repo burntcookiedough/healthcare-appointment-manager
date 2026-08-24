@@ -7,6 +7,8 @@ module only defines the small schemas that may be persisted as generated output.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Awaitable
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Protocol
@@ -123,7 +125,7 @@ class GeneratedSummaryRecord(BaseModel):
 class SummaryRepository(Protocol):
     """Repository port for generated summaries and failure states."""
 
-    def persist_summary(self, record: GeneratedSummaryRecord) -> None:
+    def persist_summary(self, record: GeneratedSummaryRecord) -> None | Awaitable[None]:
         """Persist one validated artifact, keyed by source/version/task metadata."""
 
 
@@ -148,6 +150,119 @@ class InMemorySummaryRepository:
         self.records.append(record)
 
 
+class PostgresSummaryRepository:
+    """Persist successful generated artifacts into the API-owned PostgreSQL rows.
+
+    The API creates a pending ``generated_artifacts`` row in the same transaction
+    that queues an LLM event.  The worker updates that row only after provider
+    output has passed the application schema, using the source reference/version
+    as a stale-write fence.  The repository is asynchronous because the production
+    runtime shares an ``asyncpg`` pool with the durable outbox store.
+    """
+
+    PRE_VISIT_UPDATE_SQL = """
+    UPDATE generated_artifacts AS artifact
+    SET status = 'succeeded',
+        content = $4,
+        source_versions = artifact.source_versions || $5::jsonb,
+        task_version = 'v1',
+        provider = $6,
+        model = $7,
+        error_code = NULL,
+        updated_at = now()
+    FROM symptom_versions AS symptom
+    WHERE symptom.id = $1
+      AND symptom.version = $2
+      AND artifact.source_record_id = symptom.id
+      AND artifact.source_record_type = 'symptom_version'
+      AND artifact.artifact_type = 'pre_visit_brief'
+      AND artifact.source_versions->>'symptom_version' = $3
+    """
+
+    POST_VISIT_UPDATE_SQL = """
+    UPDATE generated_artifacts AS artifact
+    SET status = 'succeeded',
+        content = $4,
+        source_versions = artifact.source_versions || $5::jsonb,
+        task_version = 'v1',
+        provider = $6,
+        model = $7,
+        error_code = NULL,
+        updated_at = now()
+    FROM visits AS visit
+    JOIN LATERAL (
+        SELECT note.id
+        FROM visit_note_versions AS note
+        WHERE note.visit_id = visit.id
+        ORDER BY note.version DESC, note.id DESC
+        LIMIT 1
+    ) AS latest_note ON TRUE
+    WHERE visit.id = $1
+      AND visit.version = $2
+      AND artifact.visit_id = visit.id
+      AND artifact.appointment_id = visit.appointment_id
+      AND artifact.source_record_id = latest_note.id
+      AND artifact.source_record_type = 'visit_note'
+      AND artifact.artifact_type = 'post_visit_summary'
+      AND artifact.source_versions->>'visit_version' = $3
+    """
+
+    def __init__(self, pool: Any) -> None:
+        self._pool = pool
+
+    async def persist_summary(self, record: GeneratedSummaryRecord) -> None:
+        """Update the pre-created artifact, failing closed if its source is stale."""
+
+        if record.task_kind == "pre_visit":
+            statement = self.PRE_VISIT_UPDATE_SQL
+            source_version_key = "symptom_version"
+        elif record.task_kind in {"post_visit", "plain_language_summary"}:
+            statement = self.POST_VISIT_UPDATE_SQL
+            source_version_key = "visit_version"
+        else:
+            raise ValueError("unsupported summary task")
+
+        content = json.dumps(
+            record.output.model_dump(mode="json"), ensure_ascii=True, separators=(",", ":")
+        )
+        metadata = json.dumps(
+            {
+                "prompt_version": record.metadata.prompt_version,
+                "schema_version": record.metadata.schema_version,
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        source_version = str(record.source_version)
+        async with self._pool.acquire() as connection, connection.transaction():
+            status = await connection.execute(
+                statement,
+                record.source_record_reference,
+                record.source_version,
+                source_version,
+                content,
+                metadata,
+                record.metadata.provider,
+                record.metadata.model,
+            )
+        if not _updated_one(status):
+            # The source resolver already authorized this reference.  A missing
+            # pending row means the API transaction was rolled back, the artifact
+            # was superseded, or a stale worker raced a newer version.
+            raise ValueError(f"summary artifact source fence failed: {source_version_key}")
+
+
+def _updated_one(status: int | str) -> bool:
+    """Interpret asyncpg's ``UPDATE n`` result without exposing driver details."""
+
+    if isinstance(status, int):
+        return status == 1
+    try:
+        return int(str(status).split()[-1]) == 1
+    except (TypeError, ValueError):
+        return str(status).upper().endswith(" 1")
+
+
 def output_model_for_task(task_kind: str) -> type[PreVisitOutput] | type[PostVisitOutput]:
     """Resolve the only two supported clinical output schemas."""
 
@@ -159,9 +274,34 @@ def output_model_for_task(task_kind: str) -> type[PreVisitOutput] | type[PostVis
 
 
 def output_schema_for_task(task_kind: str) -> dict[str, Any]:
-    """Return a provider-neutral JSON schema with strict object properties."""
+    """Return a provider-neutral schema compatible with OpenAI strict mode.
+
+    Pydantic omits fields with defaults from ``required``.  OpenAI's strict
+    structured-output mode requires every declared property to be required, so
+    normalize object schemas recursively while preserving the application model's
+    validation types (including any explicit nullable unions).
+    """
 
     schema = output_model_for_task(task_kind).model_json_schema()
+
+    def normalize(node: object) -> None:
+        if not isinstance(node, dict):
+            return
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            node["required"] = list(properties)
+            node["additionalProperties"] = False
+            for property_schema in properties.values():
+                normalize(property_schema)
+        for key in ("items", "anyOf", "oneOf", "allOf", "prefixItems"):
+            child = node.get(key)
+            if isinstance(child, dict):
+                normalize(child)
+            elif isinstance(child, list):
+                for item in child:
+                    normalize(item)
+
+    normalize(schema)
     schema["additionalProperties"] = False
     return schema
 

@@ -434,6 +434,7 @@ class PostgresTrustedDataResolver(TrustedDataResolver):
         return {
             "prescription_id": prescription_id,
             "prescription_version": version,
+            "prescription_item_id": item_id,
             "medication_reference": str(item_id),
             "medication_name": _row_value(row, "medication_name"),
             "dosage_amount": _row_value(row, "dosage"),

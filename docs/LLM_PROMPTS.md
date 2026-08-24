@@ -75,7 +75,7 @@ STRUCTURED_PRESCRIPTION_JSON_START
 {{prescription_json}}
 STRUCTURED_PRESCRIPTION_JSON_END
 
-Return JSON that matches plain_language_visit.v1 exactly. Structured prescription fields are authoritative; generated prose cannot create reminders.
+Return JSON that matches plain_language_visit.v1 exactly. Structured prescription fields are authoritative; generated prose cannot create reminders. For every `medication_review` item, copy the opaque `prescription_item_id` and `prescription_version` exactly from the reviewed structured prescription; never invent or derive either value.
 ```
 
 The server must redact direct identifiers and reject a request when the source reference
@@ -143,8 +143,10 @@ contract (additional properties are forbidden).
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["medication_name", "dosage", "route", "frequency", "start_date", "end_date", "instructions"],
+        "required": ["prescription_item_id", "prescription_version", "medication_name", "dosage", "route", "frequency", "start_date", "end_date", "instructions"],
         "properties": {
+          "prescription_item_id": {"type": "string", "format": "uuid", "minLength": 1, "maxLength": 64},
+          "prescription_version": {"type": "integer", "minimum": 1},
           "medication_name": {"type": "string", "minLength": 1, "maxLength": 160},
           "dosage": {"type": "string", "minLength": 1, "maxLength": 120},
           "route": {"type": ["string", "null"], "maxLength": 80},
@@ -160,8 +162,11 @@ contract (additional properties are forbidden).
 ```
 
 The application compares each `medication_review` item with the doctor-reviewed
-structured prescription by stable item ID/version. A mismatch marks the generated
-artifact invalid; it does not alter the prescription or reminder schedule.
+structured prescription by the `(prescription_item_id, prescription_version)` pair,
+not by array position or medication name. The pair must identify exactly one reviewed
+item; missing, duplicated, reordered, unknown, or field-mismatched items mark the
+generated artifact invalid. A mismatch never alters the prescription or reminder
+schedule.
 
 ## Version and prompt storage
 

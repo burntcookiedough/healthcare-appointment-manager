@@ -252,12 +252,5 @@ class ClinicalLLMPort(Protocol):
         """Generate optional derived content from a server-side source reference."""
 
 
-class SummaryRepository(Protocol):
-    """Persist validated derived output separately from immutable source records."""
-
-    def persist_summary(self, record: object) -> None:
-        """Persist a generated artifact or a safe failure state."""
-
-
 # Short alias for callers that do not need to spell out the provider.
 CalendarPort = GoogleCalendarPort

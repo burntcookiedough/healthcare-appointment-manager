@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 
 from .envelope import EventEnvelope
 from .results import ProcessingResult
 
-EventHandler = Callable[[EventEnvelope], ProcessingResult]
+EventHandler = Callable[[EventEnvelope], ProcessingResult | Awaitable[ProcessingResult]]
 
 
 class HandlerRegistry:

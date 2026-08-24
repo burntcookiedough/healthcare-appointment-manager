@@ -458,6 +458,10 @@ class GoogleCalendarOAuthAdapter(GoogleCalendarPort):
             return AdapterResult.success(
                 provider_reference=hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:32]
             )
+        if action == "delete" and response.status_code in {404, 410}:
+            # A repeated cancellation is convergent once the provider confirms
+            # that the event is already absent.
+            return AdapterResult.success(provider_reference=event_reference or idempotency_key)
         if classified is not None:
             return classified
         provider_reference = event_reference or (
