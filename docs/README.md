@@ -7,12 +7,12 @@ The current executable boundary is called out explicitly in [API_GUIDE.md](API_G
   rules, and deployment topology.
 - [`DOMAIN_RULES.md`](DOMAIN_RULES.md): stable invariants for booking, leave,
   ownership, clinical sources, LLM output, reminders, and auditability.
-- [`API_CONTRACT.md`](API_CONTRACT.md): frozen endpoint inventory and wire/error
-  conventions; it includes routes that are not implemented yet.
-- [`API_GUIDE.md`](API_GUIDE.md): executable Phase 1 routes, roles, examples,
-  OpenAPI/client gate, and the concurrent API completion boundary.
-- [`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md): current migration tables, constraints,
-  planned clinical/reminder entities, and ownership diagram.
+- [`API_CONTRACT.md`](API_CONTRACT.md): wire/error conventions and resource semantics;
+  [`API_GUIDE.md`](API_GUIDE.md) is the executable route/status inventory.
+- [`API_GUIDE.md`](API_GUIDE.md): current executable routes, auth/roles, frontend
+  HTTP/demo adapter boundary, OpenAPI/client gate, and examples.
+- [`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md): executable `0001`/`0002` migration tables,
+  constraints, ownership, and relationship diagram.
 - [`LLM_PROMPTS.md`](LLM_PROMPTS.md): exact versioned prompts, structured output
   schemas, provenance/storage, and graceful failure behavior.
 - [`INTEGRATIONS.md`](INTEGRATIONS.md): step-by-step Google OAuth/Calendar, SendGrid,

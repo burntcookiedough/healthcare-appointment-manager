@@ -1,7 +1,5 @@
-# Render Blueprint for the documented free-tier-friendly topology.
-# Render currently does not offer a free plan for background workers. The API may use
-# free where available; the worker entry below uses the lowest worker tier placeholder.
-# Review plan/region availability and all sync:false values before applying.
+# Render Blueprint for the documented topology. It declares configuration only;
+# no provider account, database, secret, or hosted URL is claimed by this file.
 services:
   - type: web
     name: healthcare-api
@@ -28,36 +26,38 @@ services:
         sync: false
       - key: SUPABASE_URL
         sync: false
+      - key: SUPABASE_JWT_PUBLIC_KEY
+        sync: false
+      - key: SUPABASE_JWT_ISSUER
+        sync: false
+      - key: SUPABASE_JWT_AUDIENCE
+        sync: false
       - key: SUPABASE_JWT_SECRET
         sync: false
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
-      - key: GOOGLE_REDIRECT_URI
-        sync: false
-      - key: SENDGRID_API_KEY
-        sync: false
-      - key: SENDGRID_FROM_EMAIL
-        sync: false
-      - key: LLM_PROVIDER
-        value: none
-      - key: LLM_API_KEY
-        sync: false
-      - key: LLM_MODEL
-        sync: false
+      - key: AUTH_ALLOW_LOCAL_TEST_TOKENS
+        value: "false"
+
   - type: worker
     name: healthcare-worker
     runtime: python
     rootDir: apps/worker
     plan: starter
     buildCommand: pip install --disable-pip-version-check uv && uv sync --locked
-    startCommand: uv run celery -A healthcare_worker.celery_app:celery_app worker --loglevel=INFO
+    # Assumption for post-integration reconciliation: the worker lane exposes
+    # `python -m healthcare_worker --poll-outbox`. That package entrypoint must
+    # claim PostgreSQL outbox_events directly; Celery is optional transport only.
+    startCommand: uv run python -m healthcare_worker --poll-outbox
     envVars:
       - key: HEALTHCARE_WORKER_SERVICE_NAME
         value: healthcare-worker
       - key: HEALTHCARE_WORKER_ENVIRONMENT
         value: production
+      - key: HEALTHCARE_WORKER_DATABASE_URL
+        sync: false
+      - key: HEALTHCARE_WORKER_BROKER_URL
+        sync: false
+      - key: HEALTHCARE_WORKER_RESULT_BACKEND_URL
+        sync: false
       - key: HEALTHCARE_WORKER_EVENT_VERSION
         value: "1"
       - key: HEALTHCARE_WORKER_MAX_RETRIES
@@ -70,25 +70,41 @@ services:
         value: "3"
       - key: HEALTHCARE_WORKER_TASK_QUEUE
         value: healthcare-worker
-      - key: HEALTHCARE_WORKER_BROKER_URL
+      - key: HEALTHCARE_WORKER_OUTBOX_POLL_INTERVAL_SECONDS
+        value: "2"
+      - key: HEALTHCARE_WORKER_OUTBOX_BATCH_SIZE
+        value: "50"
+      - key: HEALTHCARE_WORKER_OUTBOX_LEASE_SECONDS
+        value: "120"
+      - key: HEALTHCARE_WORKER_MAX_CONCURRENCY
+        value: "10"
+      - key: HEALTHCARE_WORKER_PROVIDER_TIMEOUT_SECONDS
+        value: "10"
+      - key: HEALTHCARE_WORKER_SENDGRID_API_KEY
         sync: false
-      - key: HEALTHCARE_WORKER_RESULT_BACKEND_URL
+      - key: HEALTHCARE_WORKER_SENDGRID_FROM_EMAIL
         sync: false
-      - key: GOOGLE_CLIENT_ID
+      - key: HEALTHCARE_WORKER_SENDGRID_ENDPOINT
+        value: https://api.sendgrid.com/v3/mail/send
+      - key: HEALTHCARE_WORKER_GOOGLE_CLIENT_ID
         sync: false
-      - key: GOOGLE_CLIENT_SECRET
+      - key: HEALTHCARE_WORKER_GOOGLE_CLIENT_SECRET
         sync: false
-      - key: GOOGLE_REFRESH_TOKEN
+      - key: HEALTHCARE_WORKER_GOOGLE_TOKEN_ENDPOINT
+        value: https://oauth2.googleapis.com/token
+      - key: HEALTHCARE_WORKER_GOOGLE_CALENDAR_ENDPOINT
+        value: https://www.googleapis.com/calendar/v3
+      - key: HEALTHCARE_WORKER_LLM_ENDPOINT
         sync: false
-      - key: GOOGLE_CALENDAR_ID
-        value: primary
-      - key: SENDGRID_API_KEY
+      - key: HEALTHCARE_WORKER_LLM_API_KEY
         sync: false
-      - key: SENDGRID_FROM_EMAIL
+      - key: HEALTHCARE_WORKER_LLM_PROVIDER
+        value: generic
+      - key: HEALTHCARE_WORKER_LLM_MODEL
         sync: false
-      - key: LLM_PROVIDER
-        value: none
-      - key: LLM_API_KEY
-        sync: false
-      - key: LLM_MODEL
-        sync: false
+      - key: HEALTHCARE_WORKER_LLM_PROMPT_VERSION
+        value: clinical.v1
+      - key: HEALTHCARE_WORKER_LLM_SCHEMA_VERSION
+        value: clinical.v1
+      - key: HEALTHCARE_WORKER_LLM_VALIDATION_RETRIES
+        value: "2"

@@ -24,11 +24,11 @@ providers have been deployed.
   worker processes, tests, and troubleshooting.
 - [ ] [ENVIRONMENT.md](ENVIRONMENT.md) and [`.env.example`](../.env.example) agree
   on names, defaults, secret ownership, and optional/degraded behavior.
-- [ ] [API_GUIDE.md](API_GUIDE.md) distinguishes the executable Phase 1 routes from
-  contract-only endpoints awaiting the concurrent API completion lane.
-- [ ] [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) names current constraints and clearly
-  labels planned visits, notes, prescriptions, generated-artifact, integration, and
-  reminder tables.
+- [ ] [API_GUIDE.md](API_GUIDE.md) lists the current executable route inventory, auth
+  boundary, frontend HTTP/demo adapter, and OpenAPI/client gate.
+- [ ] [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) describes both executable migrations and
+  names the current clinical, generated-artifact, integration, history, leave-preview,
+  and reminder tables.
 - [ ] [LLM_PROMPTS.md](LLM_PROMPTS.md) records exact versioned prompts, JSON Schemas,
   provenance/version storage, and timeout/refusal/schema-failure behavior.
 - [ ] [INTEGRATIONS.md](INTEGRATIONS.md) includes Google OAuth/Calendar, SendGrid, and
@@ -45,19 +45,19 @@ Run from the repository root unless noted:
 
 ```text
 git diff --check
-pnpm install --frozen-lockfile
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
-(cd apps/api && uv sync --locked --extra dev && uv run ruff check src tests && uv run pytest tests/test_unit_contracts.py)
-(cd apps/worker && uv sync --locked && uv run ruff check src tests && uv run pytest)
+corepack pnpm install --frozen-lockfile
+corepack pnpm --filter @healthcare-manager/web lint
+corepack pnpm --filter @healthcare-manager/web typecheck
+corepack pnpm --filter @healthcare-manager/web test
+corepack pnpm --filter @healthcare-manager/web build
+(cd apps/api && uv sync --locked --extra dev && uv run ruff check src tests && uv run ruff format --check src tests && uv run mypy src && uv run python -m compileall -q src tests && uv run alembic upgrade head && uv run pytest)
+(cd apps/worker && uv sync --locked --all-groups && uv run ruff check src tests && uv run ruff format --check src tests && uv run mypy src && uv run python -m compileall -q src tests && uv run pytest)
 ```
 
 For PostgreSQL evidence, point `HEALTHCARE_TEST_DATABASE_URL` at a disposable isolated
-database and run `cd apps/api && uv run pytest tests/test_booking_postgres.py`. Do not
-run that destructive fixture against a shared or production database. Deployment
-validation is static/config-only in this phase; do not provision services or send
+PostgreSQL 17 database, apply `uv run alembic upgrade head`, and run the complete API
+suite. The fixtures drop/truncate only that test database. Do not run them against a
+shared or production database. Deployment validation is static/config-only; do not send
 provider requests.
 
 Also verify, with available local tooling:
@@ -66,7 +66,7 @@ Also verify, with available local tooling:
 - [ ] `vercel.json` parses as JSON and its build command targets the web package.
 - [ ] CI uses Node 24, pnpm 11.23.0, Python 3.13, and frozen installs.
 - [ ] API health path and Render health check agree.
-- [ ] `infra/seed-demo.sql` uses only current migration tables and deterministic
+- [ ] `infra/seed-demo.sql` uses only current `0001`/`0002` migration tables and deterministic
   synthetic IDs.
 - [ ] No docs link points at a missing path.
 - [ ] A secret scan over owned files finds no non-placeholder credential.
@@ -78,6 +78,8 @@ After the final accepted commit is selected, create the archive from that commit
 
 ```text
 git archive --format=zip --prefix=healthcare-appointment-manager/ --output=healthcare-appointment-manager-source.zip HEAD
+tar -tf healthcare-appointment-manager-source.zip
+# or: unzip -l healthcare-appointment-manager-source.zip
 ```
 
 Because `git archive` includes committed files only, it excludes Git metadata,

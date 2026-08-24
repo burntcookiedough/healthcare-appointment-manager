@@ -33,14 +33,14 @@ leave is active.
 
 Notifications, Calendar projections, reminders, and LLM summaries are asynchronous
 projections. The domain transaction creates an immutable PostgreSQL outbox event with a
-stable deduplication key; Redis/Celery transports delivery but never owns the work.
-Workers claim events at least once, use the event UUID as the provider idempotency key
-when supported, and persist attempt count, next-attempt time, normalized error code, and
-terminal state. Transient network, rate-limit, or provider errors receive bounded
-exponential backoff with jitter. Permanent validation or authorization errors become
-terminal and remain visible for an authorized retry. Redelivery after success is
-deduplicated and cannot send a second logical message or create a second Calendar
-event.
+stable deduplication key. The durable worker poller claims events at least once with
+`FOR UPDATE SKIP LOCKED`, leases, fencing, bounded concurrency, and retry state; Redis/
+Celery may transport notifications but never owns the work. The event UUID is the
+provider idempotency key when supported. Transient network, rate-limit, or provider
+errors receive bounded exponential backoff with jitter. Permanent validation or
+authorization errors become terminal and remain visible for an authorized retry.
+Redelivery after success is deduplicated and cannot send a second logical message or
+create a second Calendar event.
 
 A SendGrid, Calendar, Redis, or LLM outage therefore leaves a committed appointment,
 visit, or prescription valid. The API exposes integration state separately as pending,
@@ -49,3 +49,5 @@ doctor-authored notes. LLM output is optional, schema-validated, versioned, and 
 generated; structured prescription fields—not generated prose—drive medication
 reminders. This separation keeps booking correctness transactional and makes external
 failure observable and recoverable without corrupting clinical or scheduling truth.
+
+Word count: 498 (excluding the title and this line; whitespace-token count).

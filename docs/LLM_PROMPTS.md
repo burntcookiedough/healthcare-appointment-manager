@@ -1,10 +1,11 @@
 # LLM prompts, schemas, and failure contract
 
-Status: **versioned design record; provider execution is not wired in Phase 1**. The
-worker currently exposes a provider-neutral `ClinicalLLMPort` and a deterministic
-fake adapter. `ClinicalSummaryRequest` carries a source-record reference, source
-version, and task kind; a later secure adapter must fetch the authorized source text
-server-side. No prompt or clinical text belongs in the outbox envelope.
+Status: **versioned design record for the current worker ports/adapters**. The worker
+exposes a provider-neutral `ClinicalLLMPort`, deterministic fakes, and a network adapter
+that fails closed when its endpoint, credentials, or trusted resolver is absent.
+`ClinicalSummaryRequest` carries a source-record reference, source version, and task
+kind; the adapter fetches authorized source text server-side. No prompt or clinical
+text belongs in the outbox envelope.
 
 The exact templates below are the reviewable source for prompt versions
 `pre_visit_summary.v1` and `visit_plain_language.v1`. Changing wording, variables,
@@ -164,17 +165,15 @@ artifact invalid; it does not alter the prescription or reminder schedule.
 
 ## Version and prompt storage
 
-The planned `generated_artifacts` record must contain at least:
+The executable `generated_artifacts` table (migration `0002_application_domain`) stores:
 
 - opaque artifact UUID and source record UUID;
 - source record version and task kind;
-- `prompt_version` and `schema_version`;
+- `task_version` (the prompt/schema versions are captured in source/version metadata);
 - provider and model identifiers (no API key);
-- status: `pending`, `ready`, `unavailable`, or `failed`;
-- rendered-input fingerprint (HMAC or salted hash), request/correlation ID, attempt
-  count, last safe error code, created/completed timestamps;
-- validated JSON output in a restricted column/object store only when retention policy
-  permits it.
+- status: `pending`, `succeeded`, or `failed`;
+- source-version JSON, last safe error code, and created/updated timestamps;
+- validated JSON/text output only when the reviewed retention policy permits it.
 
 The repository stores the exact templates and JSON Schemas in this document/review
 history. The outbox payload stores only event type and opaque source/aggregate IDs.
@@ -187,10 +186,10 @@ restricted storage with explicit access auditing and key rotation.
 
 | Failure | Artifact state | Worker behavior | User-visible result |
 | --- | --- | --- | --- |
-| Provider timeout, network error, 429, or 5xx | `retrying` then `unavailable` after the bounded ceiling | Normalize to a retryable code, use exponential backoff with jitter, and keep the outbox row durable. | Original symptoms/notes remain visible; booking or visit completion succeeds independently. |
-| Provider refusal, invalid JSON, schema mismatch, unsafe/identifier leakage, or unsupported model | `failed` (terminal) | Do not blindly retry; retain a safe error code and permit an authorized idempotent retry after correction/configuration. | Show “AI summary unavailable”; never fabricate a replacement. |
+| Provider timeout, network error, 429, or 5xx | `pending` until the outbox retry succeeds, then `succeeded` or terminal `failed` | Normalize to a retryable code, use exponential backoff with jitter, and keep the outbox row durable. | Original symptoms/notes remain visible; booking or visit completion succeeds independently. |
+| Provider refusal, invalid JSON, schema mismatch, unsafe/identifier leakage, or unsupported model | `failed` (terminal) | Do not blindly retry; retain a safe error code and permit an authorized idempotent retry after correction/configuration. | Show generated output unavailable; never fabricate a replacement. |
 | Source record missing, stale, or unauthorized | `failed` (terminal) | Reject before provider call; record no clinical text in the error. | Continue with the original authorized record or request a fresh version. |
-| Successful valid output | `ready` | Mark the same logical artifact/outbox operation succeeded using the event UUID as idempotency key. | Show generated content with the generated notice and source/version provenance. |
+| Successful valid output | `succeeded` | Mark the same logical artifact/outbox operation succeeded using the event UUID as idempotency key. | Show generated content with the generated notice and source/version provenance. |
 
 LLM work is asynchronous and never part of the booking or visit-completion transaction.
 A failure cannot cancel an appointment, prevent saving original doctor notes, change a

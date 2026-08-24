@@ -1,6 +1,8 @@
-# Phase 1 implementation
+# Phase 1 implementation record
 
-Status: authorized.
+Status: historical lane plan; the current executable surface is summarized in
+[`API_GUIDE.md`](API_GUIDE.md), [`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md), and
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 The sole supervisor coordinates two Codex worker tasks and one external Gemini Antigravity frontend lane. Every lane starts from the exact Phase 1 canonical commit and uses a separate Git worktree.
 
@@ -8,9 +10,9 @@ The sole supervisor coordinates two Codex worker tasks and one external Gemini A
 
 | Lane | Runtime | Owned scope | Output |
 |---|---|---|---|
-| API and booking foundation | GPT-5.6 Luna, max | `apps/api/**` | Executable FastAPI foundation, PostgreSQL models/migration, holds, bookings, focused tests |
-| Worker foundation | GPT-5.6 Luna, max | `apps/worker/**` | Executable Celery foundation, outbox task boundary, provider ports/fakes, focused tests |
-| Frontend | Gemini Antigravity full-auto | `apps/web/**`, `pnpm-lock.yaml` | Complete mocked patient/doctor/admin frontend and one bounded commit |
+| API and booking foundation | GPT-5.6 Luna, max | `apps/api/**` | Executable FastAPI domain routes, PostgreSQL `0001`/`0002` schema, holds, bookings, clinical workflows, focused tests |
+| Worker foundation | GPT-5.6 Luna, max | `apps/worker/**` | Durable PostgreSQL outbox poller/lease boundary, Celery transport, provider ports/fakes, focused tests |
+| Frontend | Gemini Antigravity full-auto | `apps/web/**`, `pnpm-lock.yaml` | Patient/doctor/admin frontend with typed HTTP adapter and explicit deterministic demo mode |
 
 The API lane must finish and integrate before auth/doctors or clinical-feature API tasks begin because those later tasks share API infrastructure and dependency metadata.
 
@@ -61,7 +63,8 @@ For frontend conflicts, precedence is: project contracts → accessibility and b
 
 - API and worker dependency lockfiles are committed within their owned application directories.
 - Database migration and booking tests run against an isolated PostgreSQL service.
-- Worker tests use deterministic fake adapters and do not call external providers.
-- Frontend build, lint, and type checks pass with mock mode enabled.
+- Worker tests use deterministic fake adapters and do not call external providers; the
+  durable poller is configured through `HEALTHCARE_WORKER_*` settings.
+- Frontend build, lint, and type checks pass with the chosen HTTP or demo mode.
 - Frontend status vocabulary matches `DOMAIN_RULES.md` and `API_CONTRACT.md`.
 - No lane changes files owned by another lane.

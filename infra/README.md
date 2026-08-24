@@ -7,15 +7,16 @@ Redis 8-compatible services. Run migrations deliberately from `apps/api`; applic
 processes do not mutate schema on startup.
 
 [`seed-demo.sql`](seed-demo.sql) inserts deterministic synthetic actors, one doctor,
-and weekday working hours after migration. It creates no Supabase Auth users and must
-never be run against a shared or hosted database.
+and weekday working hours after migrations `0001` and `0002`. It creates no Supabase Auth
+users and must never be run against a shared or hosted database. Enable the local
+`AUTH_ALLOW_LOCAL_TEST_TOKENS` shortcut only while using this disposable seed.
 
 ## Hosted
 
 The source manifests and operator runbook are:
 
-- [`../render.yaml`](../render.yaml) — Render-compatible API web service and Celery
-  worker with monorepo roots and frozen `uv.lock` installs.
+- [`../render.yaml`](../render.yaml) — Render-compatible API web service and durable
+  worker-poller service with monorepo roots and frozen `uv.lock` installs.
 - [`../vercel.json`](../vercel.json) — Vercel root-monorepo install/build settings for
   the Next.js web package.
 - [`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md) — Vercel plus Render/Railway

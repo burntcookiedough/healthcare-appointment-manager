@@ -1,19 +1,20 @@
 # Healthcare Appointment & Follow-up Manager
 
 Contract-first monorepo for a healthcare scheduling and follow-up system serving
-patients, doctors, and administrators. The current source snapshot contains a
-working Phase 1 booking/API and worker foundation plus a mocked Next.js frontend.
-It is not a hosted service and it must be exercised with synthetic data only.
+patients, doctors, and administrators. The current source snapshot contains an
+executable FastAPI domain API, PostgreSQL `0001`/`0002` schema, durable outbox worker
+poller, and a Next.js frontend with explicit HTTP and demo adapters. It is not a hosted
+service and it must be exercised with synthetic data only.
 
 ## What is shipped in this snapshot
 
 | Area | Current state |
 | --- | --- |
-| Web | Mocked patient, doctor, and admin experience in `apps/web`; the UI uses typed fixtures until the OpenAPI/client gate is complete. |
-| API | FastAPI process with `/api/v1/health/live`, `/api/v1/health/ready`, advisory doctor availability, patient-owned holds, hold release, and hold confirmation. |
-| Database | PostgreSQL 17 migration `0001_booking_foundation` with actors, profiles, doctors, schedules, leave, holds, appointments, idempotency, outbox, and immutable audit events. |
-| Worker | Celery/Redis transport boundary with safe versioned envelopes, deterministic fake adapters, bounded retry policy, and PHI-minimizing logs. Real SendGrid, Google Calendar, and LLM adapters are not wired yet. |
-| Remaining API contract | Doctor administration, leave application, visits, prescriptions, reminders, integration health, and production Supabase JWT verification remain with the concurrent API completion lanes. See [docs/API_GUIDE.md](docs/API_GUIDE.md). |
+| Web | Patient, doctor, and admin Next.js experiences call a typed HTTP adapter when configured and switch to deterministic fixtures only with explicit `NEXT_PUBLIC_DEMO_MODE=true`. |
+| API | FastAPI process with health, auth/profile, doctor/schedule/leave, availability/holds/appointments, visits/symptoms/prescriptions, reminders, and integration-status routes under `/api/v1`. |
+| Database | PostgreSQL 17 migrations `0001_booking_foundation` and `0002_application_domain` with booking, clinical source, generated-artifact, reminder, integration, history, leave-preview, outbox, and audit tables. |
+| Worker | Durable PostgreSQL outbox claim/lease/retry poller plus Celery transport boundary, typed provider adapters, deterministic fakes, bounded concurrency, and PHI-minimizing logs. Provider delivery remains explicitly degraded until a trusted resolver is configured. |
+| API client gate | Runtime OpenAPI is available, but a reviewed committed artifact and generated Orval client are still pending. See [docs/API_GUIDE.md](docs/API_GUIDE.md) before enabling hosted web HTTP mode. |
 
 No hosted URL, production credential, provider account, or deployment is claimed by
 this repository.
@@ -22,7 +23,8 @@ this repository.
 
 - `apps/web` — Next.js frontend owned by the Gemini Antigravity lane.
 - `apps/api` — FastAPI API, SQLAlchemy models, Alembic migrations, and API tests.
-- `apps/worker` — Celery worker, event envelope, adapters, retry, and worker tests.
+- `apps/worker` — durable outbox poller, Celery transport, event envelope, adapters,
+  retry, and worker tests.
 - `packages/api-client` — placeholder for the reviewed Orval-generated client; it is
   not generated until the OpenAPI gate is complete.
 - `infra` — local/demo seed and deployment notes; no production infrastructure is
@@ -129,11 +131,11 @@ On Windows PowerShell:
 Get-Content -Raw .\infra\seed-demo.sql | docker compose exec -T postgres psql -U healthcare -d healthcare
 ```
 
-The seed is local-only and contains no Supabase users. In the current Phase 1 auth
-boundary, use the seeded subject values as a bearer token (`demo.patient`,
-`demo.doctor`, or `demo.admin`) for local API smoke checks. Production must use the
-Supabase JWT path when that lane is integrated; never use these demo tokens outside a
-disposable local database.
+The seed is local-only and contains no Supabase users. For local smoke checks, set
+`AUTH_ALLOW_LOCAL_TEST_TOKENS=true` (as in the example) and use the seeded subject values
+as bearer tokens (`test:demo.patient`, `test:demo.doctor`, or `test:demo.admin`). The API
+accepts this shortcut only in local/development/test environments; hosted production
+must use verified Supabase JWTs and must set the flag to `false`.
 
 ## Run the applications
 
@@ -146,8 +148,10 @@ pnpm --filter @healthcare-manager/web dev
 ```
 
 The browser-safe `NEXT_PUBLIC_API_URL` defaults to
-`http://localhost:8000/api/v1`. The current web app intentionally uses mocked data
-for routes not yet backed by the generated client.
+`http://localhost:8000/api/v1`. With `NEXT_PUBLIC_DEMO_MODE=false`, the web adapter sends
+Supabase bearer-authenticated HTTP requests to the FastAPI routes. Set demo mode to
+`true` only for the deterministic in-memory fixture experience; it is not a hosted data
+source. The generated client remains pending the reviewed OpenAPI artifact.
 
 ### API (port 8000)
 
@@ -187,9 +191,18 @@ cd apps/worker
 uv run celery -A healthcare_worker.celery_app:celery_app worker --loglevel=INFO
 ```
 
-The Phase 1 worker has no durable PostgreSQL outbox dispatcher yet and defaults to
-deterministic fake provider adapters. A running worker therefore demonstrates the
-transport/handler boundary, not a production email, calendar, or LLM integration.
+The durable poller is the process that drains committed PostgreSQL `outbox_events`.
+The Render/native manifest assumes the worker lane exposes this package command:
+
+```text
+cd apps/worker
+uv run python -m healthcare_worker --poll-outbox
+```
+
+Reconcile the option name against the concurrent worker commit before deployment. The
+Celery process above is an optional transport/task boundary, not the sole outbox drain.
+Provider adapters fail closed when credentials or the trusted data resolver are absent;
+that degraded state never invalidates a committed appointment or overwrites source text.
 
 ## Tests and checks
 
@@ -202,20 +215,16 @@ pnpm test
 pnpm build
 ```
 
-The API unit suite does not require PostgreSQL:
+The API quality checks also run Ruff format, mypy, and Python compilation. The full API
+suite must run against an isolated PostgreSQL 17 database so integration tests are not
+silently skipped:
 
 ```text
 cd apps/api
-uv run pytest tests/test_unit_contracts.py
-```
-
-The API PostgreSQL/concurrency suite requires a disposable database URL. It is
-skipped unless `HEALTHCARE_TEST_DATABASE_URL` or `TEST_DATABASE_URL` is set, and the
-fixture drops/truncates only that test database:
-
-```text
-cd apps/api
-uv run pytest tests/test_booking_postgres.py
+uv sync --locked --extra dev
+uv run alembic upgrade head
+$env:HEALTHCARE_TEST_DATABASE_URL = "postgresql://healthcare:healthcare@localhost:5432/healthcare"
+uv run pytest
 ```
 
 The worker suite uses deterministic fakes and no provider network calls:
@@ -225,9 +234,10 @@ cd apps/worker
 uv run pytest
 ```
 
-Run `uv run ruff check src tests` (and `uv run mypy` where configured) in each Python
-application before submitting changes. Hosted CI runs the same frozen-install checks;
-it does not provision PostgreSQL, Redis, OAuth, SendGrid, or an LLM provider.
+Run `uv run ruff check src tests`, `uv run ruff format --check src tests`,
+`uv run mypy src`, and `uv run python -m compileall -q src tests` in each Python
+application before submitting changes. Hosted CI provisions disposable PostgreSQL 17
+services for the full API suite and worker environment but never sends provider traffic.
 
 ## Troubleshooting
 
@@ -235,18 +245,18 @@ it does not provision PostgreSQL, Redis, OAuth, SendGrid, or an LLM provider.
 | --- | --- |
 | `connection refused` on port 5432/6379 | Run `docker compose ps`; inspect `docker compose logs postgres redis`; wait for the health checks before migrating. |
 | Alembic cannot connect | Confirm the root `.env` `DATABASE_URL` uses `postgresql+asyncpg://` and run the command from `apps/api`. |
-| `401 AUTHENTICATION_REQUIRED` locally | Load `infra/seed-demo.sql` and use the exact seeded subject as the bearer token. Supabase JWT verification is not part of this Phase 1 boundary. |
+| `401 AUTHENTICATION_REQUIRED` locally | Load `infra/seed-demo.sql`, set `AUTH_ALLOW_LOCAL_TEST_TOKENS=true` in development, and use `test:demo.patient` (or the matching seeded subject). Hosted production requires a verified Supabase JWT. |
 | Hold returns `SLOT_CONFLICT` | Availability is advisory. Check the doctor ID, UTC offset, configured duration, working hours, leave, and other active holds/appointments. Retry with a new idempotency key only for a new user intent. |
 | Hold returns `HOLD_EXPIRED` | The server/database clock owns expiry. Create a new hold; do not extend a client countdown. |
-| Worker starts but no provider call occurs | Phase 1 uses fake adapters and has no durable outbox dispatcher. Verify the Celery process and event envelope tests instead of expecting an external side effect. |
+| Worker starts but no provider call occurs | Verify the durable poller command, `HEALTHCARE_WORKER_DATABASE_URL`, migrated `outbox_events`, and safe provider/resolver configuration. Celery transport alone does not drain PostgreSQL outbox rows; missing resolver/provider settings intentionally degrade. |
 | Vercel or Render build cannot find the package | Re-check the monorepo root settings and the service-specific `rootDir`, then use the exact commands in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). |
 
 ## Documentation and deployment
 
-- [docs/API_GUIDE.md](docs/API_GUIDE.md) — executable routes, contract-only routes,
-  roles, errors, examples, and OpenAPI/client generation gate.
+- [docs/API_GUIDE.md](docs/API_GUIDE.md) — executable route inventory, auth/roles,
+  errors, frontend adapter boundary, and OpenAPI/client generation gate.
 - [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) — current migration schema,
-  ownership constraints, planned clinical/reminder entities, and diagram.
+  ownership constraints, executable clinical/reminder entities, and diagram.
 - [docs/LLM_PROMPTS.md](docs/LLM_PROMPTS.md) — exact versioned prompt templates,
   structured output schemas, storage, and failure behavior.
 - [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) — Google OAuth/Calendar, SendGrid,
@@ -267,9 +277,15 @@ caches, worktrees, local `.env` files, and untracked build output:
 git archive --format=zip --prefix=healthcare-appointment-manager/ --output=healthcare-appointment-manager-source.zip HEAD
 ```
 
-Before sharing it, verify `git ls-files` contains no `.env` other than `.env.example`
-and inspect the archive listing. Do not create the final zip as part of normal local
-validation.
+Inspect the archive with a portable listing command before sharing it:
+
+```text
+tar -tf healthcare-appointment-manager-source.zip
+# or: unzip -l healthcare-appointment-manager-source.zip
+```
+
+Also verify `git ls-files` contains no `.env` other than `.env.example`. Do not create
+the final zip as part of normal local validation.
 
 ## Security boundary
 

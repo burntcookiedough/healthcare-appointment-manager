@@ -1,9 +1,10 @@
 # API contract
 
-Status: Phase 0 implementation contract. This document is the agreed contract for
-backend implementation and frontend mocks; it does not claim that an OpenAPI document
-or generated client exists yet. FastAPI schemas will become the executable source, and
-the committed OpenAPI document will later generate `packages/api-client` with Orval.
+Status: Contract and wire-shape reference for the current executable API. The complete
+route implementation is in `apps/api/src/healthcare_api/routers`; see
+[`API_GUIDE.md`](API_GUIDE.md) for the current route/status inventory. A committed
+OpenAPI artifact and generated client do not yet exist, so FastAPI schemas and runtime
+OpenAPI remain the source to review before generating `packages/api-client` with Orval.
 
 Domain behavior is defined in [DOMAIN_RULES.md](./DOMAIN_RULES.md). Endpoint names below
 cite those rules where the behavior is easy to misinterpret.
@@ -13,7 +14,7 @@ cite those rules where the behavior is easy to misinterpret.
 - Base path: `/api/v1`.
 - HTTPS is required outside isolated local development.
 - Request and response bodies use `application/json` and UTF-8. File upload is outside
-  the Phase 0 contract.
+  the current API contract.
 - Field names use `snake_case`. Resource IDs are opaque UUID strings.
 - Instants use RFC 3339 with an explicit offset; canonical responses use UTC `Z`.
   Calendar dates use `YYYY-MM-DD`, local times use `HH:MM[:SS]`, and time zones use IANA
@@ -116,7 +117,7 @@ after that window.
 
 Commands marked **Versioned** require `expected_version` in the JSON body and follow
 `CONC-001`. `409 VERSION_CONFLICT` returns safe `details` containing `current_version`.
-ETags may be added later but are not part of Phase 0.
+ETags may be added later but are not part of the current contract.
 
 Booking and hold correctness still relies on the PostgreSQL conflict constraint. A
 successful availability read or matching resource version does not guarantee that a
@@ -211,8 +212,8 @@ schema component names and enums must be frozen in FastAPI before generating the
 | `POST /visits/{visit_id}/complete` | assigned doctor | **Idempotent, Versioned.** Validate and atomically finalize notes/prescription and complete the appointment (`VISIT-002`). External work continues asynchronously. |
 | `POST /visits/{visit_id}/amendments` | assigned doctor | **Idempotent, Versioned.** Append a reasoned correction to a completed visit; do not mutate historical content. |
 
-Generated briefs are created asynchronously from appointment/visit events. Phase 0 does
-not expose a general-purpose prompt endpoint. The detail resources expose generation
+Generated briefs are created asynchronously from appointment/visit events. The current
+runtime does not expose a general-purpose prompt endpoint. The detail resources expose generation
 state so the UI can render `pending`, `succeeded`, or graceful-degradation states while
 always showing original text (`LLM-001` through `LLM-003`).
 
@@ -243,8 +244,8 @@ always showing original text (`LLM-001` through `LLM-003`).
 
 Before replacing frontend mocks, the integration owner must:
 
-1. Implement explicit Pydantic v2 request and response models for every shipped route;
-   no untyped dictionaries or database models are exposed.
+1. Review the explicit Pydantic v2 request and response models already used by every
+   shipped route; no untyped dictionaries or database models may be exposed.
 2. Assign stable `operationId` values, schema names, tags, documented auth, status codes,
    error envelopes, idempotency headers, and examples containing synthetic data only.
 3. Export and commit the FastAPI OpenAPI artifact from the canonical implementation,

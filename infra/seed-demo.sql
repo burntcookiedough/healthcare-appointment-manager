@@ -1,7 +1,7 @@
--- Synthetic local-only demo data for the Phase 1 booking foundation.
+-- Synthetic local-only demo data for the current 0001/0002 application schema.
 -- Run only after: cd apps/api && uv run alembic upgrade head
 -- This file creates no Supabase Auth users and contains no real identity data.
--- The current Phase 1 bearer boundary accepts the subject_id values as local tokens.
+-- Local API smoke checks use test:<subject_id> only when AUTH_ALLOW_LOCAL_TEST_TOKENS=true.
 
 INSERT INTO actors (id, subject_id, role, is_active)
 VALUES

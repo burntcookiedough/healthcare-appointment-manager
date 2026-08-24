@@ -1,155 +1,141 @@
 # Deployment runbook
 
-This is a deployment-ready description, not evidence of a deployment. There is no
-hosted URL, provisioned database, Redis instance, OAuth client, SendGrid account, LLM
-key, or platform secret in this repository. Use synthetic data until privacy/security
-and production-readiness review is complete.
+This is a deployment procedure and source-manifest description, not evidence of a
+deployment. No Vercel, Render, Railway, Supabase, Redis, Google, SendGrid, or LLM
+account, secret, custom domain, or hosted URL is configured in this repository. Use
+synthetic data until privacy, security, consent, and production-readiness review is
+complete.
 
-## Target topology
+## Current topology
 
 ```text
-Vercel (Next.js web)
-        | HTTPS, browser-safe NEXT_PUBLIC_API_URL
+Vercel (Next.js web; browser-safe config)
+        | HTTPS + Supabase access token
         v
-Render or Railway (FastAPI API) ---- private TLS ----> Supabase PostgreSQL/Auth
+Render/Railway FastAPI API ----------------------> PostgreSQL 17 (system of record)
+        |                                             ^
+        +-- atomic outbox_events --------------------|
+                                                      |
+Render/Railway durable worker poller -----------------+
+        |                 |
+        +--> SendGrid / Google Calendar / LLM adapters
         |
-        +---- durable outbox intent ----> managed Redis (Upstash or equivalent)
-                                             |
-Render or Railway (Celery worker) ------------+
-        |              |                 |
-     SendGrid     Google Calendar       LLM provider
+        +--> Redis/Celery (optional transport; never durable authority)
 ```
 
-The database owns appointments, holds, schedules, clinical records, generated-artifact
-metadata, reminders, outbox state, and audit records. Redis is a transport/coordination
-layer only. A Vercel project is separate from the API/worker services. Supabase and
-Upstash are the free-tier-friendly managed data choices in [PLAN.md](../PLAN.md); an
-operator may substitute equivalent PostgreSQL/Redis services with TLS and backups.
+The API and worker must run compatible source/migration commits. PostgreSQL owns
+appointments, holds, schedules, leave, clinical source versions, prescriptions, reminder
+occurrences, outbox rows, integration state, history, and audit events. A provider outage
+therefore changes only a projection status, never committed scheduling or clinical truth.
 
-## What is configured in source
+## Source manifests and boundaries
 
-- [`vercel.json`](../vercel.json) contains a root-monorepo install/build command for
-  `pnpm 11.23.0` and the `apps/web` package.
-- [`render.yaml`](../render.yaml) describes a Python API web service and a Celery
-  worker with `apps/api` and `apps/worker` roots, frozen `uv.lock` installs, API
-  liveness health check, and explicit secret placeholders.
-- [`.env.example`](../.env.example) documents safe local/hosted variable names.
-- The API exposes `/api/v1/health/live` and PostgreSQL-backed
-  `/api/v1/health/ready`.
-- Alembic migration `0001_booking_foundation` is committed; migrations are run as a
-  deliberate release step, not by every process at startup.
-- The worker has a documented Celery command and broker-free `--smoke` check.
+- [`vercel.json`](../vercel.json) uses the root workspace lockfile and Corepack pnpm to
+  build `@healthcare-manager/web`.
+- [`render.yaml`](../render.yaml) declares a Python API service at `apps/api` and a
+  worker at `apps/worker`. The worker start command is
+  `uv run python -m healthcare_worker --poll-outbox`, an assumption that the concurrent
+  worker lane must reconcile against its final package CLI before deployment.
+- [`.env.example`](../.env.example) and [`ENVIRONMENT.md`](ENVIRONMENT.md) use exact API
+  and `HEALTHCARE_WORKER_*` names. They contain placeholders only.
+- `compose.yaml` is local-only PostgreSQL 17 plus Redis 8-compatible infrastructure;
+  it does not provision a hosted service or run migrations automatically.
+- Alembic `0001_booking_foundation` and `0002_application_domain` are executable. Run
+  `uv run alembic upgrade head` once from the API release environment before traffic.
 
-## Not configured or not deployed
-
-- Vercel, Render, Railway, Supabase, Upstash, Google, SendGrid, or LLM accounts.
-- Production environment values, custom domains, CORS allowlists, OAuth callbacks,
-  webhook/reconciliation jobs, encryption keys, backups, alerting, CI secrets, or
-  hosted URLs.
-- A committed/reviewed OpenAPI artifact and generated Orval client.
-- Durable PostgreSQL outbox dispatcher and real provider adapters.
-- The clinical visits/prescriptions/generated-artifacts/reminder migrations and their
-  completion-lane API routes.
-- Production Supabase JWT verification and administrator provisioning.
-
-Do not remove these caveats from a submission simply because a platform accepts a
-placeholder manifest.
+The worker package's durable poller claims PostgreSQL `outbox_events` with bounded batch,
+lease, fencing, retry, and concurrency settings. Celery smoke/start commands are useful
+for transport checks but must not be presented as the only outbox drain. The current
+runtime factory has no trusted-data resolver, so SendGrid/Calendar/LLM operations remain
+explicitly degraded (`PROVIDER_NOT_CONFIGURED` or equivalent) until that resolver is
+provided by a reviewed worker lane.
 
 ## Pre-deploy gates
 
-1. Verify the exact release commit, clean tracked state, and changed-file scope.
-2. Run JavaScript frozen checks: `pnpm install --frozen-lockfile`, lint, typecheck,
-   tests, and build.
-3. Run API and worker frozen checks: `uv sync --locked` (API with `--extra dev`),
-   Ruff, unit tests, and worker tests. Run PostgreSQL concurrency tests against an
-   isolated database URL.
-4. Confirm the reviewed OpenAPI/client and clinical migrations have landed if deploying
-   beyond the Phase 1 routes. Do not expose contract-only endpoints by configuration.
-5. Create managed PostgreSQL/Redis databases, private connections, backups, and
-   least-privilege credentials in the provider dashboards. Keep all values in secret
-   stores.
-6. Configure Supabase Auth only when the JWT/auth lane is integrated. Add exact web/API
-   origins and OAuth callback URLs; do not use local demo bearer subjects in hosted
-   environments.
+1. Verify the exact release commit, clean tracked state, and delegated changed-file scope.
+2. Run the frozen JavaScript checks: `corepack pnpm install --frozen-lockfile`, web lint,
+   typecheck, tests, and build.
+3. In both Python applications run locked sync, Ruff lint/format, mypy, bytecode
+   compilation, and tests. API tests must run with an isolated PostgreSQL 17 URL so no
+   integration test is skipped; apply `alembic upgrade head` from an empty database first.
+4. Validate YAML/JSON/Compose, docs links, environment-key coverage, and secret scans.
+5. Create private PostgreSQL/Redis services, backups, TLS/private networking, and
+   least-privilege credentials in provider dashboards. Keep API, migration, worker, and
+   provider credentials separate.
+6. Provision Supabase JWT verification values (`SUPABASE_JWT_PUBLIC_KEY`, issuer,
+   audience) and set `AUTH_ALLOW_LOCAL_TEST_TOKENS=false`. Never use demo subjects in
+   hosted production.
+7. Review the runtime OpenAPI JSON, web adapter request/response shapes, CORS allowlist,
+   OAuth callback allowlists, and provider degraded behavior before exposing the web app.
 
 ## Vercel setup
 
-1. Create a Vercel project from the repository without claiming a production domain.
-2. Set the project **Root Directory** to the repository root so the root
-   `pnpm-lock.yaml` and workspace are visible. Keep the framework as Next.js.
-3. Add `NEXT_PUBLIC_API_URL` for Preview and Production separately. Add Supabase
-   browser-safe values only after the auth lane is ready; never add server secrets.
-4. Review the build log for the frozen install and
-   `corepack pnpm --filter @healthcare-manager/web build`. Preview deployments may show mocked
-   screens where the generated API client is not yet wired.
-5. Verify the browser can reach the API HTTPS origin and that API CORS allows only the
-   intended Vercel origin. No URL is recorded here because none is deployed.
+1. Create a Vercel project from the repository and set its Root Directory to the
+   repository root so `pnpm-workspace.yaml` and `pnpm-lock.yaml` are visible.
+2. Keep the Next.js framework and use the committed install/build commands. Set exactly
+   one public API URL form (`NEXT_PUBLIC_API_URL` including `/api/v1`, or
+   `NEXT_PUBLIC_API_BASE_URL` as the origin) for each environment.
+3. Set Supabase URL/anon key only as browser-safe values. Never add database, Redis,
+   OAuth-client-secret, SendGrid, LLM, or JWT-verification secrets to Vercel client env.
+4. With `NEXT_PUBLIC_DEMO_MODE=false`, the web adapter sends bearer-authenticated HTTP
+   requests and exposes API error/integration state. With it `true`, the UI uses explicit
+   deterministic fixtures and does not represent hosted records.
+5. Confirm API CORS allows only the intended Vercel origin. No domain is recorded here.
 
-The committed `vercel.json` uses Corepack so the root `packageManager` field selects
-pnpm 11.23.0 instead of an older platform default. It deliberately does not rewrite
-API traffic or embed a secret. Configure the project domain and environment values in
-Vercel, not in source.
+## Render setup
 
-## Render deployment
+Render's current plan/region quotas change; review them before applying the Blueprint.
+The worker uses a `starter` placeholder because a free background-worker plan is not
+assumed.
 
-The Blueprint is a starting point; inspect current Render plan/region availability
-before applying it. Render's current Blueprint rules allow a free web service but do
-not offer a free background-worker plan, so the checked-in worker entry uses the
-lowest `starter` tier placeholder. If a free worker or credit is available on Railway,
-use the same `uv`/ Celery commands there; otherwise budget the worker separately rather
-than silently treating a paid plan as free.
+1. Create a Blueprint and inspect both services. API `rootDir` is `apps/api`; worker
+   `rootDir` is `apps/worker`.
+2. Add API `DATABASE_URL`, Supabase JWT values, and any reviewed provider settings as
+   Render secrets. Add the worker's exact `HEALTHCARE_WORKER_DATABASE_URL`,
+   `HEALTHCARE_WORKER_OUTBOX_POLL_INTERVAL_SECONDS`,
+   `HEALTHCARE_WORKER_OUTBOX_BATCH_SIZE`, `HEALTHCARE_WORKER_OUTBOX_LEASE_SECONDS`,
+   `HEALTHCARE_WORKER_MAX_CONCURRENCY`, and
+   `HEALTHCARE_WORKER_PROVIDER_TIMEOUT_SECONDS` values, plus the prefixed
+   `HEALTHCARE_WORKER_SENDGRID_*`, `HEALTHCARE_WORKER_GOOGLE_*`, and
+   `HEALTHCARE_WORKER_LLM_*` provider settings. Do not duplicate broad credentials
+   between services; see [`ENVIRONMENT.md`](ENVIRONMENT.md) for the complete matrix.
+3. Build with each service's frozen `uv.lock`. Render supplies `$PORT` to the API start
+   command. The worker command must be the worker package's durable poller CLI, not only
+   `celery ... worker`.
+4. From a one-time release shell using the API environment, run
+   `uv run alembic upgrade head` and record the revision plus backup/restore point. Never
+   have every API/worker process run migrations at startup.
+5. Probe `/api/v1/health/live` for process liveness, then `/api/v1/health/ready` for
+   PostgreSQL readiness. A `503` is a data-service failure, not a reason to hide health.
+6. Inspect safe worker JSON logs for poll claims, lease recovery, retry/terminal state,
+   and provider degradation. Verify an outbox row transitions without changing its
+   appointment when an adapter is unavailable.
+7. Run a synthetic doctor/availability/hold/confirm smoke flow and verify appointment,
+   audit, and outbox rows in PostgreSQL. Do not send real provider traffic until consent
+   and provider review are complete.
 
-1. Create a Render Blueprint from the repository and review both services before
-   applying. API `rootDir` is `apps/api`; worker `rootDir` is `apps/worker`.
-2. Provide the API `DATABASE_URL`, `SUPABASE_URL`, and later provider secrets as
-   Render secret values. Provide the worker
-   `HEALTHCARE_WORKER_BROKER_URL` and any provider credentials separately. Do not
-   duplicate broad credentials between services.
-3. Build uses `pip install uv && uv sync --locked`; start uses Uvicorn for the API and
-   Celery for the worker. Render supplies `PORT` to the API command.
-4. Before the first traffic, run the migration once from a release shell using the API
-   environment: `uv run alembic upgrade head`. Record the migration revision and
-   database backup/restore point. Never run migrations concurrently from every worker.
-5. Wait for `GET /api/v1/health/live` to return `200 {"status":"ok"}`. Then verify
-   `GET /api/v1/health/ready` returns `200 {"status":"ok"}`; a `503` is a data-service
-   readiness failure, not a reason to hide it behind a proxy.
-6. Start the worker and inspect safe JSON logs for task registration, broker
-   connection, retry, and terminal outcomes. The Phase 1 worker still uses fakes and
-   has no durable outbox dispatcher.
-7. Run a synthetic availability/hold/confirm smoke test and verify appointment/outbox
-   state in PostgreSQL. Do not send a real notification until provider setup and
-   consent review are complete.
+## Railway-compatible native deployment
 
-## Railway-compatible deployment
+Railway can use the same roots and commands without the Blueprint:
 
-Railway can use the same two service roots and commands without the Blueprint:
-
-- API root: `apps/api`; build `pip install uv && uv sync --locked --extra dev`;
-  start `uv run uvicorn healthcare_api.main:app --host 0.0.0.0 --port $PORT`.
-- Worker root: `apps/worker`; build `pip install uv && uv sync --locked`; start
-  `uv run celery -A healthcare_worker.celery_app:celery_app worker --loglevel=INFO`.
-- Attach a managed PostgreSQL and Redis service or external Supabase/Upstash URLs.
-  Map the same environment names in [`ENVIRONMENT.md`](ENVIRONMENT.md).
-- Run `uv run alembic upgrade head` once from an API release shell before health
-  readiness is considered complete. Keep API and worker on the same source commit.
-- Configure a public API health probe at `/api/v1/health/live`, private worker
-  networking, and an allowlist for the Vercel origin.
-
-Railway plan names and free quotas change; verify current account limits before
-authorizing a deployment. The source manifest remains Render-compatible and does not
-claim that either platform is currently connected.
+- API root `apps/api`; build `pip install uv && uv sync --locked --extra dev`; start
+  `uv run uvicorn healthcare_api.main:app --host 0.0.0.0 --port $PORT`.
+- Worker root `apps/worker`; build `pip install uv && uv sync --locked`; start the
+  worker-package poller command from the current `render.yaml` assumption and reconcile
+  its option against the worker commit before release.
+- Attach isolated PostgreSQL 17 and Redis services; map the exact names in
+  [`ENVIRONMENT.md`](ENVIRONMENT.md), including `HEALTHCARE_WORKER_DATABASE_URL`.
+- Run the migration once, configure private worker networking, and allow only the Vercel
+  origin in API CORS. Railway plan/free-tier terms change; verify current quotas.
 
 ## Rollback and operations
 
-- Roll back the API/worker to the last source commit only when its migration compatibility
-  is verified. Do not move a migration revision backward without an explicit recovery
-  plan and database backup.
-- A provider outage is handled by outbox retry/terminal state; do not mark the
-  appointment failed to make a dashboard green.
-- Preserve failed build logs, migration output, health responses, and provider error
-  codes for incident review. Redact tokens and PHI.
-- Monitor API latency/errors, database conflicts, pending outbox age, worker liveness,
-  retry/terminal counts, reminder lateness, and Calendar drift.
-- Before production healthcare data, complete access reviews, encryption/key rotation,
+- Roll back API and worker only to a source commit whose migrations are compatible with
+  the database. Do not move Alembic history backward without backup/recovery approval.
+- Preserve build logs, migration output, health responses, and normalized provider error
+  codes. Redact tokens and PHI.
+- Monitor API latency/errors, PostgreSQL conflicts, pending outbox age/depth, claim/lease
+  recovery, retry/terminal counts, worker liveness, reminder lateness, and Calendar drift.
+- Before accepting healthcare data, complete access review, encryption/key rotation,
   consent, retention/deletion/export, backup/restore, disaster recovery, incident
   response, and formal security/privacy review.

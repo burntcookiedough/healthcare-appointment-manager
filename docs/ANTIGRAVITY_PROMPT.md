@@ -65,11 +65,14 @@ If a UI idea conflicts with a domain or API contract, follow the contract. Do no
 
 ## Goal
 
-Build a polished, responsive, production-quality mocked frontend for patient, doctor, and administrator experiences. The frontend must be ready to swap from typed mocks to the generated Orval client later without redesigning the pages.
+Build a polished, responsive, production-quality frontend for patient, doctor, and
+administrator experiences. Keep the typed API adapter as the single data boundary: it
+must support the current FastAPI HTTP mode and an explicit deterministic demo mode while
+the reviewed OpenAPI/Orval client gate remains pending.
 
 Use:
 
-- Next.js 16 App Router
+- Next.js 15 App Router (the version pinned by `apps/web/package.json`/lockfile)
 - React 19 and TypeScript with strict mode
 - Tailwind CSS v4
 - shadcn/ui and Radix primitives as the only component system
@@ -187,6 +190,8 @@ Your final report must contain:
 - generated/ignored state
 - residual risks, contract mismatches, or unverified assumptions
 
-Do not claim backend or Supabase integration is complete. This assignment ends with a complete mocked frontend, a passing production build, and one reviewable commit.
+Do not claim a reviewed generated client, hosted deployment, or provider integration is
+complete. This assignment ends with a complete frontend, explicit demo/HTTP mode
+behavior, a passing production build, and one reviewable commit.
 
 ---

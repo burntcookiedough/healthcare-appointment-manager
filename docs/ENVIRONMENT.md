@@ -1,81 +1,112 @@
 # Environment reference
 
-This repository uses one root `.env` for local API/web values and an explicit
-`HEALTHCARE_WORKER_` prefix for worker settings. [`.env.example`](../.env.example)
-is the copyable placeholder file; it intentionally contains no usable credentials.
-In hosted environments, inject values through Vercel/Render/Railway/Supabase/Upstash
-secret stores instead of committing an environment file.
+The checked-in [`.env.example`](../.env.example) is a placeholder matrix for the
+current executable API, web adapter, and durable worker. Hosted values belong in
+Vercel/Render/Railway/Supabase/Redis secret stores; no credential or hosted URL is
+committed. The API reads the root `.env`. The worker uses only the explicit
+`HEALTHCARE_WORKER_*` names and does not implicitly load dotenv files.
 
-## Configuration matrix
+## Web variables
 
-| Variable | Consumer | Required in the current snapshot | Safe local value/default | Hosted/degraded behavior |
-| --- | --- | --- | --- | --- |
-| `NEXT_PUBLIC_API_URL` | Web browser | Yes for API-backed screens | `http://localhost:8000/api/v1` | Set to the API HTTPS origin plus `/api/v1`; it is public and must not contain a secret. |
-| `NEXT_PUBLIC_SUPABASE_URL` | Web (future auth lane) | No; mocked auth is usable | `https://YOUR_PROJECT_REF.supabase.co` | Public project URL only. Leave unset while the Supabase lane is incomplete. |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Web (future auth lane) | No; mocked auth is usable | `replace-with-supabase-anon-key` | Browser-safe anon key only; never put a service-role key here. |
-| `APP_ENV` | API | No | `development` | Use `production` only after hosted secrets, CORS, and auth are configured. |
-| `API_HOST` / `API_PORT` | API | No | `0.0.0.0` / `8000` | Render/Railway supplies `PORT`; the runbook passes it to Uvicorn. |
-| `API_PREFIX` | API | No | `/api/v1` | Keep stable; changing it requires a contract/client decision. |
-| `DATABASE_URL` | API and future durable dispatcher | Yes for readiness/migrations | `postgresql+asyncpg://healthcare:healthcare@localhost:5432/healthcare` | The API uses asyncpg; convert a provider's `postgresql://` URL to `postgresql+asyncpg://` while preserving TLS/query options. Do not expose it to the browser. |
-| `HOLD_TTL_SECONDS` | API | No | `600` (10 minutes) | Keep one documented value across web/API; the server clock and database state are authoritative. |
-| `READINESS_TIMEOUT_SECONDS` | API | No | `2` | Bound readiness probes; a failed database check returns `503 DEPENDENCY_UNAVAILABLE`. |
-| `LOG_LEVEL` | API | No | `INFO` | Use structured, PHI-safe logs; never increase detail by logging request bodies. |
-| `SUPABASE_URL` | API (future JWT lane) | No in Phase 1 | Same project placeholder as above | Required before accepting Supabase JWTs; keep server-side. |
-| `SUPABASE_JWT_SECRET` | API (future JWT lane) | No in Phase 1 | `replace-with-supabase-jwt-verification-secret` | Inject through a secret store. The current Phase 1 actor lookup does not validate this value. |
-| `REDIS_URL` | Compatibility/future dispatcher | No in current API | `redis://localhost:6379/0` | Use a TLS URL from Upstash/managed Redis when a dispatcher is integrated. |
-| `CELERY_BROKER_URL` | Compatibility/future dispatcher | No in current API | `redis://localhost:6379/0` | Not read by the current worker; retain only until the API dispatcher contract is frozen. |
-| `CELERY_RESULT_BACKEND` | Compatibility/future dispatcher | No | `redis://localhost:6379/1` | Worker results are optional; PostgreSQL outbox state remains durable authority. |
-| `HEALTHCARE_WORKER_BROKER_URL` | Worker | Yes to process a real Celery worker | `redis://localhost:6379/0` | Inject as a secret/private URL; the worker reconnects on startup. `--smoke` does not need Redis. |
-| `HEALTHCARE_WORKER_RESULT_BACKEND_URL` | Worker | No | `redis://localhost:6379/1` | Optional; do not treat broker results as business state. |
-| `HEALTHCARE_WORKER_SERVICE_NAME` | Worker | No | `healthcare-worker` | Use a stable service name for logs/metrics. |
-| `HEALTHCARE_WORKER_ENVIRONMENT` | Worker | No | `development` | Allowed values are `development`, `test`, `staging`, and `production`. |
-| `HEALTHCARE_WORKER_EVENT_VERSION` | Worker | No | `1` | Reject unsupported event versions terminally; coordinate changes with the outbox producer. |
-| `HEALTHCARE_WORKER_MAX_RETRIES` | Worker | No | `5` | Bounded redelivery; tune only with an operational decision. |
-| `HEALTHCARE_WORKER_RETRY_BASE_DELAY_SECONDS` | Worker | No | `5` | Exponential backoff base. |
-| `HEALTHCARE_WORKER_RETRY_MAX_DELAY_SECONDS` | Worker | No | `900` | Hard delay cap. |
-| `HEALTHCARE_WORKER_RETRY_JITTER_SECONDS` | Worker | No | `3` | Jitter reduces synchronized provider retries. |
-| `HEALTHCARE_WORKER_TASK_QUEUE` | Worker | No | `healthcare-worker` | Keep API dispatcher routing aligned if the queue name changes. |
-| `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_MODEL` | Future LLM adapter | No; fake adapter is default | `none`, blank, blank | Blank/disabled means generated artifacts are `unavailable` or `pending`; booking, original notes, and visit completion continue. |
-| `LLM_TIMEOUT_SECONDS` | Future LLM adapter | No | `15` | Enforce a bounded provider timeout and record a normalized retryable failure. |
-| `LLM_PROMPT_VERSION` / `LLM_SCHEMA_VERSION` | Future LLM adapter | No | `pre_visit_summary.v1` / `clinical_summary.v1` | Persist versions with each generated artifact; do not silently change prompts. |
-| `SENDGRID_API_KEY` | Future email adapter | No; fake adapter is default | blank | Blank means notification status remains pending/failed and the appointment is still valid. |
-| `SENDGRID_FROM_EMAIL` | Future email adapter | No | `notifications@example.invalid` | Must be a verified sender in the provider account before production use. |
-| `SENDGRID_TEMPLATE_PREFIX` | Future email adapter | No | `healthcare` | Keep template identifiers out of PHI-bearing queue payloads. |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Future Calendar OAuth | No; fake adapter is default | blank | Missing values disable Calendar projection without changing appointments. Secret stays server-side. |
-| `GOOGLE_REDIRECT_URI` | Future Calendar OAuth | No | `http://localhost:8000/api/v1/integrations/google/callback` | Must exactly match the OAuth client allowlist and hosted HTTPS callback. |
-| `GOOGLE_REFRESH_TOKEN` | Future Calendar worker | No | blank | Store encrypted in a managed secret store; never put it in queue payloads or browser config. |
-| `GOOGLE_CALENDAR_ID` / `GOOGLE_OAUTH_SCOPES` | Future Calendar worker | No | `primary` / `...calendar.events` | Use least-privilege scopes and minimum event data; see [INTEGRATIONS.md](INTEGRATIONS.md). |
-| `SEED_DEMO_DATA` | Human/operator metadata | No | `false` | Documentation-only switch today; load [`infra/seed-demo.sql`](../infra/seed-demo.sql) explicitly. |
+| Variable | Consumer | Local value | Hosted/degraded behavior |
+| --- | --- | --- | --- |
+| `NEXT_PUBLIC_API_URL` | Next.js browser client | `http://localhost:8000/api/v1` | Public API base including `/api/v1`; never include a secret. |
+| `NEXT_PUBLIC_API_BASE_URL` | Next.js browser client | blank (optional alias) | Use the API origin when this alias is preferred; the client appends `/api/v1`. Configure only one URL form. |
+| `NEXT_PUBLIC_DEMO_MODE` | Next.js browser client | `false` | Set `true` only for deterministic in-memory demo fixtures. Production role switching and fixture fallbacks are disabled. |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase browser auth | project placeholder | Public project URL only; no service-role credential. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase browser auth | placeholder | Browser-safe anon key only; leave unset while auth is not provisioned. |
 
-## Required combinations
+`apps/web/src/lib/api/client.ts` selects HTTP mode when a URL is configured and
+`NEXT_PUBLIC_DEMO_MODE` is not `true`. It sends the Supabase bearer token, generates
+opaque idempotency keys for mutation calls, and performs one deduplicated session
+refresh after a `401`. Demo mode is intentionally separate from the API/database.
 
-- API startup/readiness: `DATABASE_URL`; PostgreSQL must have migration
-  `0001_booking_foundation`.
-- Web: `NEXT_PUBLIC_API_URL`; Supabase values remain optional while the frontend uses
-  the mock/session lane.
-- Worker process: `HEALTHCARE_WORKER_BROKER_URL`; a result backend is optional.
-- External integrations: all provider variables are optional for core booking. A
-  missing/failed provider must create an explicit integration/derived-output status,
-  never roll back a committed appointment or overwrite original clinical text.
+## API variables
 
-## Local loading rules
+| Variable | Consumer | Local value/default | Hosted/degraded behavior |
+| --- | --- | --- | --- |
+| `APP_ENV` | FastAPI | `development` | Use `production` only with JWT, CORS, database, and secret review. |
+| `API_HOST` / `API_PORT` | FastAPI | `0.0.0.0` / `8000` | Render supplies `PORT`; the manifest passes it to Uvicorn. |
+| `API_PREFIX` | FastAPI | `/api/v1` | Keep stable with the web client and health probe. |
+| `DATABASE_URL` | FastAPI/Alembic | `postgresql+asyncpg://healthcare:healthcare@localhost:5432/healthcare` | Required for readiness and migrations; server-only. |
+| `HOLD_TTL_SECONDS` | Booking service | `600` | Server/database time owns expiry; clients cannot extend a hold. |
+| `READINESS_TIMEOUT_SECONDS` | Readiness probe | `2` | Bounds the PostgreSQL check; failure returns `503 DEPENDENCY_UNAVAILABLE`. |
+| `LOG_LEVEL` | API logging | `INFO` | Keep logs structured and PHI-safe. |
+| `SUPABASE_URL` | API operator metadata | project placeholder | Keep server-side; it does not replace token verification settings. |
+| `SUPABASE_JWT_PUBLIC_KEY` | API JWT verifier | blank PEM placeholder | Preferred hosted verification key for RS256/ES256; inject through a secret store. |
+| `SUPABASE_JWT_ISSUER` | API JWT verifier | `https://YOUR_PROJECT_REF.supabase.co/auth/v1` | Must exactly match the token `iss` claim. |
+| `SUPABASE_JWT_AUDIENCE` | API JWT verifier | `authenticated` | Must match the configured Supabase audience. |
+| `SUPABASE_JWT_SECRET` | API JWT verifier | blank | Optional legacy HS256 path only; never commit a real secret when using it. |
+| `AUTH_ALLOW_LOCAL_TEST_TOKENS` | API auth | `true` for local seeded tests | Must be `false` in hosted production. `test:<subject>` is accepted only in local/development/test environments. |
 
-1. Copy `.env.example` to `.env` at the repository root.
-2. The API's Pydantic settings reads `.env` and `../../.env` when run from
-   `apps/api`.
-3. The worker settings intentionally do not read arbitrary dotenv files. Export the
-   `HEALTHCARE_WORKER_*` values in the shell or configure the process manager to load
-   the same secret file. Do not assume that starting from the repository root makes
-   worker values visible.
+The API fails closed when a real JWT cannot be verified. It maps the verified subject
+to an active application actor before applying patient/doctor/admin ownership rules.
+
+## Worker and durable outbox variables
+
+All names below map directly to `healthcare_worker.config.WorkerSettings` and must retain
+the prefix. `HEALTHCARE_WORKER_DATABASE_URL` is the PostgreSQL URL used by the durable
+poller; it is separate from the API's `DATABASE_URL` key even when both point to the
+same database.
+
+| Variable | Local default | Hosted/degraded behavior |
+| --- | --- | --- |
+| `HEALTHCARE_WORKER_SERVICE_NAME` | `healthcare-worker` | Stable service/metric label. |
+| `HEALTHCARE_WORKER_ENVIRONMENT` | `development` | `production` on Render/Railway. |
+| `HEALTHCARE_WORKER_DATABASE_URL` | `postgresql://healthcare:healthcare@localhost:5432/healthcare` | Required by the worker-package `--poll-outbox` entrypoint; private server-only URL. |
+| `HEALTHCARE_WORKER_BROKER_URL` | `redis://localhost:6379/0` | Celery transport only; Redis is never business-state authority. |
+| `HEALTHCARE_WORKER_RESULT_BACKEND_URL` | `redis://localhost:6379/1` | Optional result transport; durable outcome remains PostgreSQL. |
+| `HEALTHCARE_WORKER_EVENT_VERSION` | `1` | Reject unsupported event envelopes terminally. |
+| `HEALTHCARE_WORKER_MAX_RETRIES` | `5` | Bounded redelivery ceiling. |
+| `HEALTHCARE_WORKER_RETRY_BASE_DELAY_SECONDS` | `5` | Exponential backoff base. |
+| `HEALTHCARE_WORKER_RETRY_MAX_DELAY_SECONDS` | `900` | Hard retry delay cap. |
+| `HEALTHCARE_WORKER_RETRY_JITTER_SECONDS` | `3` | De-synchronizes provider retries. |
+| `HEALTHCARE_WORKER_TASK_QUEUE` | `healthcare-worker` | Celery queue/routing name; not an outbox store. |
+| `HEALTHCARE_WORKER_OUTBOX_POLL_INTERVAL_SECONDS` | `2` | Poll wake interval for pending/retryable rows. |
+| `HEALTHCARE_WORKER_OUTBOX_BATCH_SIZE` | `50` | Maximum rows claimed per poll; bounded by concurrency. |
+| `HEALTHCARE_WORKER_OUTBOX_LEASE_SECONDS` | `120` | Claim lease/fencing window; expired processing rows are recoverable. |
+| `HEALTHCARE_WORKER_MAX_CONCURRENCY` | `10` | Bounded in-process provider attempt concurrency. |
+| `HEALTHCARE_WORKER_PROVIDER_TIMEOUT_SECONDS` | `10` | Timeout for external adapter calls. |
+| `HEALTHCARE_WORKER_SENDGRID_API_KEY` | blank | Blank or missing resolver credentials yield `PROVIDER_NOT_CONFIGURED`; appointments remain valid. |
+| `HEALTHCARE_WORKER_SENDGRID_FROM_EMAIL` | `notifications@example.invalid` | Must be a verified sender before sending. |
+| `HEALTHCARE_WORKER_SENDGRID_ENDPOINT` | SendGrid HTTPS endpoint | Keep HTTPS and use the reviewed provider endpoint. |
+| `HEALTHCARE_WORKER_GOOGLE_CLIENT_ID` | blank | OAuth client ID for the server-side Calendar adapter. |
+| `HEALTHCARE_WORKER_GOOGLE_CLIENT_SECRET` | blank | Server-only OAuth secret; store in a managed secret store. |
+| `HEALTHCARE_WORKER_GOOGLE_TOKEN_ENDPOINT` | Google token endpoint | Reserved for the reviewed OAuth flow; no browser exposure. |
+| `HEALTHCARE_WORKER_GOOGLE_CALENDAR_ENDPOINT` | Google Calendar API endpoint | Keep HTTPS; Calendar is only a projection. |
+| `HEALTHCARE_WORKER_LLM_ENDPOINT` | blank | Blank disables network generation and leaves derived artifacts pending/failed. |
+| `HEALTHCARE_WORKER_LLM_API_KEY` | blank | Server-only provider key. |
+| `HEALTHCARE_WORKER_LLM_PROVIDER` | `generic` | Allowed values are `openai`, `gemini`, or `generic`; no `none` value is accepted by the worker settings. |
+| `HEALTHCARE_WORKER_LLM_MODEL` | blank | Configure only after privacy/model review. |
+| `HEALTHCARE_WORKER_LLM_PROMPT_VERSION` | `clinical.v1` | Persist/version any generated artifact provenance. |
+| `HEALTHCARE_WORKER_LLM_SCHEMA_VERSION` | `clinical.v1` | Validate structured output against the reviewed schema. |
+| `HEALTHCARE_WORKER_LLM_VALIDATION_RETRIES` | `2` | Bounded schema-validation retries. |
+
+The Render command assumes the worker lane exposes
+`uv run python -m healthcare_worker --poll-outbox` from the `apps/worker` root. That
+package entrypoint must call the existing `build_outbox_poller` factory and claim
+PostgreSQL `outbox_events` directly. Reconcile the option name and startup behavior
+against the worker commit before deployment. The current factory has no trusted-data
+resolver, so provider calls remain safely degraded even if credentials are present;
+that is an explicit limitation, not evidence that Celery drained the outbox.
+
+## Required combinations and local loading
+
+1. Copy `.env.example` to `.env`, start `docker compose up -d postgres redis`, and run
+   `cd apps/api; uv run alembic upgrade head`.
+2. API readiness requires a reachable database migrated through `0002_application_domain`.
+3. Worker polling requires `HEALTHCARE_WORKER_DATABASE_URL`; Celery smoke checks do not
+   prove durable polling.
 4. Never use `NEXT_PUBLIC_*` for database, Redis, OAuth, SendGrid, or LLM secrets.
+5. Blank/missing providers must surface a separate pending/retryable/failed integration
+   state and must never undo a committed appointment or overwrite original clinical text.
 
 ## Secret and PHI rules
 
 - Keep `.env` ignored; only `.env.example` is tracked.
-- Rotate a credential if it appears in a log, task name, URL, commit, screenshot, or
-  test fixture.
+- Rotate credentials if they appear in logs, URLs, commits, screenshots, queue payloads,
+  or task names.
 - Use synthetic actors/text for demos and tests.
-- Do not place symptoms, notes, prescriptions, generated content, refresh tokens, or
-  access tokens in `DATABASE_URL` query strings, queue payloads, request IDs, or logs.
-- Hosted deployments should use separate credentials for API, worker, migrations, and
-  provider integrations where the platform supports it.
+- Do not place symptoms, notes, prescriptions, refresh tokens, access tokens, or provider
+  payloads in URLs, idempotency keys, queue names, or general logs.
+- Use separate least-privilege credentials for API, migrations, worker, and providers.

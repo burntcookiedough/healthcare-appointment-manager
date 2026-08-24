@@ -1,120 +1,91 @@
 # API guide
 
-This guide separates the executable Phase 1 FastAPI surface from the broader frozen
-contract in [`API_CONTRACT.md`](API_CONTRACT.md). It is intentionally explicit about
-what a local process can serve today. Do not build a client against a contract-only
-route until the concurrent API completion lane has added the route, tests, and reviewed
-OpenAPI artifact.
+This guide describes the executable FastAPI surface in the current source. The
+implementation is no longer a booking-only/Phase 1 stub: migration `0002` and the
+application-domain router expose profiles, doctors, schedules, leave, appointments,
+clinical visits, reminders, and integration status. The route list below is derived from
+`apps/api/src/healthcare_api/routers`; the runtime OpenAPI document remains the final
+wire-contract authority.
 
-## Base protocol
+## Base protocol and authentication
 
-- Base path: `/api/v1`.
-- JSON request/response bodies use `snake_case`.
-- Resource IDs are opaque UUIDs.
-- Instants require an explicit RFC 3339 offset; responses serialize UTC as `Z`.
-- Every response has `X-Request-ID`; the JSON error envelope repeats it as
-  `request_id`.
-- Mutating hold routes require `Idempotency-Key` with 16–128 visible ASCII characters.
-  A key is scoped to the authenticated actor, method, and route template. Reuse the
-  same key only for the same user intent.
+- Base path: `/api/v1`; JSON fields use `snake_case`; IDs are opaque UUIDs.
+- Instants require an RFC 3339 offset and responses serialize UTC as `Z`.
+- Every response carries `X-Request-ID`; the JSON error envelope repeats it as
+  `request_id` without PHI.
+- `GET /health/live` and `GET /health/ready` are public. Other routes require a
+  Supabase-compatible bearer token mapped to an active `actors` row.
+- The API verifies JWT signature, issuer, audience, expiry, and optional `nbf`. Hosted
+  deployments should use `SUPABASE_JWT_PUBLIC_KEY`, `SUPABASE_JWT_ISSUER`, and
+  `SUPABASE_JWT_AUDIENCE`; `SUPABASE_JWT_SECRET` is only an explicit HS256 alternative.
+- `test:<subject>` local tokens are accepted only when `AUTH_ALLOW_LOCAL_TEST_TOKENS=true`
+  and `APP_ENV` is local/development/test. Render sets the flag to `false`.
+- Mutating hold, leave, appointment, visit, and integration-retry routes require an
+  `Idempotency-Key` header with 16–128 visible ASCII characters. Versioned updates carry
+  `expected_version` (leave apply uses `expected_version` for the doctor schedule).
 
-The current default actor dependency treats the bearer value as a local subject lookup
-(and accepts the optional `test:` prefix). It does not validate a Supabase JWT yet.
-The production authentication lane must replace that boundary before a hosted service
-accepts real identities.
+The server enforces role and ownership; a browser role selector, URL, or guessed UUID is
+not authorization. Unrelated patient/doctor resources are concealed or denied without
+clinical data disclosure.
 
-## Executable routes at this source snapshot
+## Executable route inventory
 
-| Method | Path | Roles in Phase 1 | Status and behavior |
+Every route in this table is mounted by `create_app()` and backed by the current
+router/service code; focused contract/domain tests exercise the behavior. “Owner” means
+an additional resource check applies after role authorization.
+
+| Method | Path | Roles | Behavior |
 | --- | --- | --- | --- |
-| GET | `/health/live` | Public | **Implemented.** Returns `{"status":"ok"}` without checking dependencies. A schema-hidden `/health/live` alias also exists for probes. |
-| GET | `/health/ready` | Public | **Implemented.** Runs `SELECT 1`; returns `503 DEPENDENCY_UNAVAILABLE` when PostgreSQL is unavailable. |
-| GET | `/doctors/{doctor_id}/availability?from=&to=&duration_minutes=` | patient, assigned doctor, admin | **Implemented.** Advisory UTC slots for a bounded range (maximum 31 days); it never reserves a slot. |
-| POST | `/holds` | patient | **Implemented.** Validates doctor duration/schedule/leave and atomically creates a server-expiring active hold or returns `409 SLOT_CONFLICT`. |
-| GET | `/holds/{hold_id}` | owning patient | **Implemented.** Returns the current hold and expires an overdue hold using database time. |
-| DELETE | `/holds/{hold_id}` | owning patient | **Implemented.** Idempotently releases an active hold and returns `204`. |
-| POST | `/holds/{hold_id}/confirm` | owning patient | **Implemented.** Atomically creates a confirmed appointment, converts the hold, writes appointment/calendar outbox rows, and preserves original symptoms. |
-| All other paths in the inventory below | varies | **Contract-only.** | **Depends on the concurrent API completion lane.** A route is not shipped merely because it appears in `API_CONTRACT.md`. |
+| GET | `/health/live` | public | Process liveness; no dependency call. |
+| GET | `/health/ready` | public | Bounded PostgreSQL `SELECT 1`; unavailable returns `503`. |
+| GET | `/me` | patient, doctor, admin | Verified subject, active role, and profile ID. |
+| GET/PATCH | `/me/profile` | patient | Read/update own display name/timezone with version check. |
+| GET | `/doctors` | patient, doctor, admin | Search active/public doctors. |
+| GET | `/doctors/{doctor_id}` | patient, doctor, admin | Doctor detail; inactive detail is admin-only. |
+| POST/PATCH | `/doctors`, `/doctors/{doctor_id}` | admin | Provision/update doctor profiles; create is idempotent. |
+| GET/PUT | `/doctors/{doctor_id}/working-hours` | doctor (owner), admin | Read/replace schedule and durations with version check. |
+| GET | `/doctors/{doctor_id}/leave` | doctor (owner), admin | List leave intervals. |
+| POST | `/doctors/{doctor_id}/leave/preview` | admin | Create short-lived impact preview. |
+| POST | `/doctors/{doctor_id}/leave` | admin | Apply preview atomically; cancels affected appointments and emits work. |
+| POST | `/doctors/{doctor_id}/leave/{leave_id}/preview` | admin | Preview an edit/removal impact from current rows. |
+| PATCH | `/doctors/{doctor_id}/leave/{leave_id}` | admin | Apply a versioned leave edit with idempotency checks. |
+| DELETE | `/doctors/{doctor_id}/leave/{leave_id}` | admin | Remove leave with idempotency/version checks. |
+| GET | `/doctors/{doctor_id}/availability` | patient, doctor (owner), admin | Advisory slots for an aware bounded range and configured duration. |
+| POST | `/holds` | patient | Create a server-expiring hold or return `409 SLOT_CONFLICT`. |
+| GET/DELETE | `/holds/{hold_id}` | patient (owner) | Inspect/expire or idempotently release an owned hold. DELETE is `204`. |
+| POST | `/holds/{hold_id}/confirm` | patient (owner) | Atomically create appointment, convert hold, and write outbox/audit rows. |
+| GET | `/appointments` | patient, doctor, admin | Role-filtered appointment summaries with optional status/time filters. |
+| GET | `/appointments/{appointment_id}` | patient, doctor, admin | Authorized detail, original symptoms only where permitted. |
+| POST | `/appointments/{appointment_id}/cancel` | patient, doctor, admin | Authorized versioned cancellation with reason. |
+| POST | `/appointments/{appointment_id}/reschedule` | patient, doctor, admin | Atomic versioned interval change with conflict checks and history. |
+| GET/POST | `/appointments/{appointment_id}/symptoms` | patient/doctor; patient writes | Read versions or append patient symptom source; originals remain preserved. |
+| GET/POST | `/appointments/{appointment_id}/visit` | patient/doctor; doctor opens | Read or open the assigned appointment visit. |
+| PATCH | `/visits/{visit_id}` | doctor | Save a draft note/prescription with optimistic versioning. |
+| POST | `/visits/{visit_id}/complete` | doctor | Complete visit atomically and enqueue derived work. |
+| POST | `/visits/{visit_id}/amendments` | doctor | Append an audited correction to a completed visit. |
+| GET/PUT | `/me/reminder-preferences` | patient | Read/update own channel/timezone/local-time preferences. |
+| GET | `/prescriptions/{prescription_id}/reminder-schedule` | patient, doctor | Read deterministic occurrences derived from structured items. |
+| GET | `/appointments/{appointment_id}/integrations` | patient, doctor, admin | Authorized per-appointment integration states only. |
+| GET | `/admin/integrations` | admin | Filter operational integration rows by state/channel. |
+| POST | `/admin/integrations/{operation_id}/retry` | admin | Idempotently retry an authorized terminal integration operation. |
 
-FastAPI's runtime documentation is available at
-`http://localhost:8000/api/v1/docs`, ReDoc at `/api/v1/redoc`, and JSON at
-`/api/v1/openapi.json` while the API is running. There is no committed OpenAPI file
-or generated Orval client at this boundary.
+FastAPI publishes interactive docs at `/api/v1/docs`, ReDoc at `/api/v1/redoc`, and the
+runtime OpenAPI JSON at `/api/v1/openapi.json` while the API is running. There is no
+committed OpenAPI artifact or generated Orval client yet.
 
-## Request and response shapes
+## Booking and clinical invariants
 
-### Availability
-
-Request query parameters:
-
-- `from` and `to`: aware timestamps; `from < to` and the range is at most 31 days.
-- `duration_minutes`: 1–480 and one of the doctor's configured durations.
-
-Response:
-
-```json
-{
-  "items": [
-    {
-      "doctor_id": "00000000-0000-0000-0000-000000000010",
-      "starts_at": "2026-08-24T03:30:00Z",
-      "ends_at": "2026-08-24T04:00:00Z",
-      "available": true
-    }
-  ],
-  "next_cursor": null
-}
-```
-
-`available: true` is a snapshot, not ownership. A later hold/confirm command can
-still lose a database conflict.
-
-### Hold creation
-
-```http
-POST /api/v1/holds
-Authorization: Bearer demo.patient
-Idempotency-Key: demo-hold-key-0001
-Content-Type: application/json
-
-{"doctor_id":"00000000-0000-0000-0000-000000000010","starts_at":"2026-08-24T04:00:00Z","duration_minutes":30}
-```
-
-The response is `201` with `id`, `version`, patient/doctor IDs, interval,
-`status: "active"`, and server-assigned `expires_at`. The client cannot choose or
-extend `expires_at`.
-
-### Hold confirmation
-
-```http
-POST /api/v1/holds/{hold_id}/confirm
-Authorization: Bearer demo.patient
-Idempotency-Key: demo-confirm-key-0001
-Content-Type: application/json
-
-{"symptoms_text":"Synthetic headache after exercise"}
-```
-
-A successful `201` returns the confirmed appointment, including the exact original
-`symptoms_text`. The same key and canonical body replay the first result. An expired
-or non-active hold returns `409 HOLD_EXPIRED` or `409 INVALID_STATE_TRANSITION`;
-it does not create an appointment or outbox residue.
-
-## Roles and ownership
-
-| Role | Current executable behavior | Frozen contract boundary |
-| --- | --- | --- |
-| patient | Can view advisory availability and manage only owned holds; confirm creates their appointment. | Own profile, appointments, visit summaries made available, prescriptions, and reminders. |
-| doctor | Can view only their own availability when their actor is seeded; no doctor-management or visit routes are implemented yet. | Own schedule/leave and assigned clinical workspace only. |
-| admin | Can view advisory availability; no admin mutation route is implemented yet. | Doctor/schedule/leave operations and safe integration health; clinical text is excluded by default. |
-
-The server, not the browser role selector, is the authority. A resource that belongs to
-another patient/doctor may be concealed as `404 RESOURCE_NOT_FOUND` rather than
-confirming its existence.
+Availability is a snapshot, never ownership. A hold receives a database/server expiry;
+the client cannot extend it. PostgreSQL range exclusion and transactional locks prevent
+overlap under concurrency. Confirmation commits the appointment, converted hold, audit
+event, and required outbox work together. External email, Calendar, Redis, or LLM failure
+changes only integration/derived-output state and cannot invalidate the appointment.
+Original patient symptoms and doctor notes are retained as source versions. Reminder
+timing comes only from structured prescription fields, never generated prose.
 
 ## Error envelope
 
-Every non-2xx JSON response follows:
+Every non-2xx JSON response uses:
 
 ```json
 {
@@ -129,50 +100,35 @@ Every non-2xx JSON response follows:
 }
 ```
 
-Current handlers expose stable codes including `AUTHENTICATION_REQUIRED`,
-`FORBIDDEN`, `RESOURCE_NOT_FOUND`, `INVALID_REQUEST`,
-`VALIDATION_FAILED`, `SLOT_CONFLICT`, `HOLD_EXPIRED`,
-`INVALID_STATE_TRANSITION`, `INTERNAL_ERROR`, and
-`DEPENDENCY_UNAVAILABLE`. The frozen contract additionally reserves
-`VERSION_CONFLICT`, `IDEMPOTENCY_KEY_REUSED`, `LEAVE_PREVIEW_STALE`,
-`RATE_LIMITED`, and integration-specific outcomes for the completion lanes. Clients
-branch on `error.code`, not display text, and must not echo clinical input in errors.
+Stable implementation codes include `AUTHENTICATION_REQUIRED`, `FORBIDDEN`,
+`RESOURCE_NOT_FOUND`, `INVALID_REQUEST`, `VALIDATION_FAILED`, `SLOT_CONFLICT`,
+`HOLD_EXPIRED`, `INVALID_STATE_TRANSITION`, `VERSION_CONFLICT`,
+`IDEMPOTENCY_KEY_REUSED`, `LEAVE_PREVIEW_STALE`, `INTERNAL_ERROR`, and
+`DEPENDENCY_UNAVAILABLE`. Clients branch on `error.code`, not display text, and must not
+echo clinical input in an error.
 
-Provider or LLM failure after a domain commit is an integration/derived-output status,
-not a failed appointment response.
+## Frontend/API integration
 
-## Frozen contract-only endpoint groups
+`apps/web/src/lib/api/client.ts` is the current typed data-access boundary. With an API
+URL and `NEXT_PUBLIC_DEMO_MODE=false`, it sends Supabase bearer tokens to `/api/v1`,
+generates idempotency keys, refreshes an expired session once, and surfaces the API error
+envelope. With `NEXT_PUBLIC_DEMO_MODE=true`, it uses deterministic in-memory fixtures for
+offline/demo scenarios; it never pretends those records are hosted data. The production
+role is derived from `GET /me`, not a UI role switcher.
 
-These paths are documented for client/design alignment but are not executable until the
-API completion lane lands them:
+`packages/api-client` is still a placeholder because no reviewed OpenAPI artifact has
+been committed. Before enabling a hosted frontend, start the API at the exact release
+commit, review `/api/v1/openapi.json`, validate operation IDs/statuses/ownership/error
+schemas, generate the pinned client, and reconcile the web adapter's request/response
+shapes in one contract-reviewed change. Do not claim generated-client parity from mocks.
 
-- `/me`, `/me/profile`, and profile preferences.
-- Doctor search/detail/provisioning and working-hours administration.
-- Appointment list/detail, cancellation, and rescheduling.
-- Leave preview/apply/edit/remove with preview-token and schedule-version checks.
-- Symptoms, generated briefs, visits, note versions, prescriptions, and amendments.
-- Prescription reminder schedule and patient reminder preferences.
-- Appointment/admin integration status and terminal-operation retry.
+## OpenAPI handoff
 
-The exact role matrix, response views, and invariants remain in
-[`API_CONTRACT.md`](API_CONTRACT.md); [`DOMAIN_RULES.md`](DOMAIN_RULES.md) is the
-source for booking, leave, LLM, reminder, ownership, and audit semantics.
-
-## OpenAPI and generated-client handoff
-
-When the API completion lane is ready:
-
-1. Start the API with the intended environment and fetch
-   `/api/v1/openapi.json` from that exact commit.
-2. Review operation IDs, tags, auth requirements, status codes, error schemas, examples,
-   idempotency headers, and PHI-minimized response views.
-3. Validate the JSON and run a breaking-change diff against the previously accepted
-   artifact. A route appearing without tests is not an API completion.
-4. Commit the reviewed artifact and run the pinned Orval generator to replace
-   `packages/api-client/src/index.ts` and related generated output. Never hand-edit
-   generated files.
-5. Update frontend mocks only after the contract diff and role/ownership tests pass.
-6. Record the source commit and OpenAPI checksum in the submission evidence.
-
-Until then, keep using the typed mock boundary in `apps/web`; do not invent an alternate
-client schema or claim the placeholder package is generated.
+1. Run migrations through `head`, start FastAPI with the intended environment, and fetch
+   `/api/v1/openapi.json`.
+2. Review auth dependencies, role/ownership views, status codes, idempotency headers,
+   error schemas, examples, and PHI-minimized response fields.
+3. Validate the JSON and perform a breaking-change diff against the accepted artifact.
+4. Generate `packages/api-client` from that reviewed document; never hand-edit generated
+   output. Update web HTTP adapters and mocks only after contract tests pass.
+5. Record the source commit and OpenAPI checksum in submission evidence.
