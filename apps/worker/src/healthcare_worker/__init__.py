@@ -1,1 +1,3 @@
-"""Healthcare worker package. Feature implementation begins after Phase 0."""
+"""Healthcare appointment outbox worker foundation."""
+
+__version__ = "0.0.0"
