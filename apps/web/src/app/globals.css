@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #fbfbf8;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f6f5f0;
+  --color-ink: #171815;
+  --color-ink-muted: #666861;
+  --color-ink-faint: #8e8e89;
+  --color-line: #e5e4de;
+  --color-line-subtle: #f6f5f0;
+  --color-sage: #eef5ef;
+  --color-sage-border: #d8e7db;
+  --color-sage-ink: #315b43;
+  --color-blue: #eef3f7;
+  --color-blue-border: #d9e3ea;
+  --color-blue-ink: #38556b;
+  --color-butter: #f7f2df;
+  --color-butter-border: #e8dec0;
+  --color-butter-ink: #655b36;
+  --color-peach: #f8ece6;
+  --color-peach-border: #ebcfc2;
+  --color-peach-ink: #7a4636;
+  --radius-control: 12px;
+  --radius-panel: 16px;
+  --shadow-panel: 0 16px 48px rgb(23 24 21 / 5%);
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  --background: #fbfbf8;
+  --foreground: #171815;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Subtle grid texture for calendar / scheduling aesthetic */
+.bg-grid-pattern {
+  background-size: 32px 32px;
+  background-image:
+    linear-gradient(to right, rgba(229, 228, 222, 0.4) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(229, 228, 222, 0.4) 1px, transparent 1px);
+}
+
+/* Focus visibility for WCAG 2.2 AA */
+:focus-visible {
+  outline: 2px solid #171815;
+  outline-offset: 2px;
+}
+
+/* Reduced Motion Override */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

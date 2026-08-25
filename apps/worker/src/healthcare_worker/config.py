@@ -8,14 +8,23 @@ source of truth for an appointment or an outbox record.
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, RedisDsn
+from pydantic import Field, RedisDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "test", "staging", "production"]
+LLMProvider = Literal["none", "disabled", "openai", "gemini", "generic"]
 
 
 class WorkerSettings(BaseSettings):
-    """Environment-backed settings with bounded retry controls."""
+    """Environment-backed settings with bounded retry controls.
+
+    Every field is read from the exact ``HEALTHCARE_WORKER_`` namespace.  Provider
+    credentials are optional for core booking, but a selected provider without
+    its required credentials remains an explicit ``PROVIDER_NOT_CONFIGURED``
+    failure; it is never silently replaced with a fake adapter.  Set
+    ``HEALTHCARE_WORKER_LLM_PROVIDER=none`` (or ``disabled``) to intentionally
+    disable LLM work.
+    """
 
     model_config = SettingsConfigDict(
         env_prefix="HEALTHCARE_WORKER_",
@@ -33,6 +42,37 @@ class WorkerSettings(BaseSettings):
     retry_max_delay_seconds: float = Field(default=900.0, gt=0, le=3600)
     retry_jitter_seconds: float = Field(default=3.0, ge=0, le=60)
     task_queue: str = Field(default="healthcare-worker", min_length=1, max_length=64)
+    database_url: str | None = Field(default=None, min_length=1, repr=False)
+    outbox_poll_interval_seconds: float = Field(default=2.0, gt=0, le=300)
+    outbox_batch_size: int = Field(default=50, ge=1, le=500)
+    outbox_lease_seconds: float = Field(default=120.0, gt=1, le=3600)
+    max_concurrency: int = Field(default=10, ge=1, le=100)
+    provider_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
+    sendgrid_api_key: SecretStr | None = None
+    sendgrid_from_email: str | None = Field(default=None, min_length=3, max_length=320)
+    sendgrid_endpoint: str = Field(
+        default="https://api.sendgrid.com/v3/mail/send", min_length=8, max_length=500
+    )
+    google_client_id: str | None = Field(default=None, min_length=1, max_length=256)
+    google_client_secret: SecretStr | None = None
+    google_token_endpoint: str = Field(
+        default="https://oauth2.googleapis.com/token", min_length=8, max_length=500
+    )
+    google_calendar_endpoint: str = Field(
+        default="https://www.googleapis.com/calendar/v3", min_length=8, max_length=500
+    )
+    llm_endpoint: str | None = Field(default=None, min_length=8, max_length=500)
+    llm_api_key: SecretStr | None = None
+    llm_provider: LLMProvider = "generic"
+    llm_model: str = Field(default="", max_length=128)
+    llm_prompt_version: str = Field(default="clinical.v1", min_length=1, max_length=64)
+    llm_schema_version: str = Field(default="clinical.v1", min_length=1, max_length=64)
+    llm_validation_retries: int = Field(default=2, ge=0, le=3)
+
+    def secret_value(self, secret: SecretStr | None) -> str | None:
+        """Read a secret without ever including it in settings representations."""
+
+        return secret.get_secret_value() if secret is not None else None
 
     @property
     def redis_broker_url(self) -> RedisDsn:

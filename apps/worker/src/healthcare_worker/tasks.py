@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any
 
 from celery import Task
 from pydantic import ValidationError
@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from .celery_app import celery_app
 from .config import get_settings
 from .envelope import EventEnvelope
-from .logging import safe_log
+from .logging import safe_event_type, safe_log
 from .processor import process_envelope
 from .results import ProcessingResult
 from .retry import retry_policy_from_settings
@@ -43,7 +43,7 @@ def invalid_envelope_result() -> ProcessingResult:
     max_retries=10,
     ignore_result=False,
 )  # type: ignore[untyped-decorator]
-def process_event(self: Task, raw_event: RawEnvelope) -> dict[str, object]:
+def process_event(self: Task, raw_event: RawEnvelope) -> dict[str, Any]:
     """Process one outbox event and ask Celery for bounded redelivery when needed."""
 
     try:
@@ -58,7 +58,7 @@ def process_event(self: Task, raw_event: RawEnvelope) -> dict[str, object]:
             "event_rejected",
             fields={"error_code": result.error_code},
         )
-        return cast(dict[str, object], result.model_dump(mode="json"))
+        return result.model_dump(mode="json")
 
     settings = get_settings()
     result = process_envelope(
@@ -67,7 +67,7 @@ def process_event(self: Task, raw_event: RawEnvelope) -> dict[str, object]:
         logger=LOGGER,
     )
     if not result.is_retryable:
-        return cast(dict[str, object], result.model_dump(mode="json"))
+        return result.model_dump(mode="json")
 
     retries_already_made = int(getattr(self.request, "retries", 0))
     policy = retry_policy_from_settings(settings)
@@ -85,12 +85,12 @@ def process_event(self: Task, raw_event: RawEnvelope) -> dict[str, object]:
                 "event_id": str(envelope.event_id),
                 "correlation_id": envelope.correlation_id,
                 "aggregate_id": str(envelope.aggregate_id),
-                "event_type": envelope.event_type,
+                "event_type": safe_event_type(envelope.event_type),
                 "attempt": retries_already_made,
                 "error_code": terminal.error_code,
             },
         )
-        return cast(dict[str, object], terminal.model_dump(mode="json"))
+        return terminal.model_dump(mode="json")
 
     countdown = policy.delay_for(retries_already_made + 1)
     if result.retry_after_seconds is not None:
@@ -106,7 +106,7 @@ def process_event(self: Task, raw_event: RawEnvelope) -> dict[str, object]:
             "event_id": str(envelope.event_id),
             "correlation_id": envelope.correlation_id,
             "aggregate_id": str(envelope.aggregate_id),
-            "event_type": envelope.event_type,
+            "event_type": safe_event_type(envelope.event_type),
             "attempt": retries_already_made,
             "error_code": result.error_code,
             "retry_after_seconds": countdown,

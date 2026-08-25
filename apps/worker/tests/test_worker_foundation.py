@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
 
+import healthcare_worker.__main__ as worker_main
 import healthcare_worker.processor as processor_module
 from healthcare_worker.adapters import (
     DeterministicFakeClinicalLLMAdapter,
@@ -13,9 +17,11 @@ from healthcare_worker.adapters import (
     DeterministicFakeGoogleCalendarAdapter,
 )
 from healthcare_worker.celery_app import create_celery_app
+from healthcare_worker.config import WorkerSettings
 from healthcare_worker.envelope import EventEnvelope
 from healthcare_worker.events import EventType
 from healthcare_worker.handlers import HandlerDependencies, build_default_registry
+from healthcare_worker.health import health_payload
 from healthcare_worker.idempotency import InMemoryDeduplicationStore
 from healthcare_worker.logging import safe_log
 from healthcare_worker.ports import AdapterResult
@@ -205,7 +211,7 @@ def test_celery_retry_wiring_schedules_bounded_redelivery(
         process_event.pop_request()
 
     assert retry_call["max_retries"] == 5
-    assert retry_call["countdown"] >= 11
+    assert cast(int, retry_call["countdown"]) >= 11
     assert retry_call["args"] == (envelope.model_dump(mode="json"),)
 
 
@@ -273,3 +279,33 @@ def test_processing_result_event_id_is_uuid() -> None:
     result = process_envelope(make_envelope(), deduplication=InMemoryDeduplicationStore())
 
     assert isinstance(result.event_id, UUID)
+
+
+def test_health_ready_returns_nonzero_when_database_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(worker_main, "get_settings", lambda: WorkerSettings(database_url=None))
+
+    assert worker_main.main(["--health-ready"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {"service": "healthcare-worker", "status": "unavailable"}
+
+
+def test_startup_runtime_error_is_not_reported_as_missing_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_assembly(_settings: WorkerSettings) -> object:
+        raise RuntimeError("synthetic assembly failure")
+
+    monkeypatch.setattr(worker_main, "build_outbox_poller", fail_assembly)
+    status = asyncio.run(
+        worker_main.run_poller(WorkerSettings(database_url="postgresql://synthetic.invalid/db"))
+    )
+    assert status["error_code"] == "WORKER_STARTUP_FAILED"
+
+
+def test_health_payload_uses_worker_service_default() -> None:
+    assert health_payload({"status": "ok"}) == {
+        "service": "healthcare-worker",
+        "status": "ok",
+    }

@@ -1,6 +1,7 @@
 # Architecture
 
-Status: Phase 0 architecture contract. This document freezes system boundaries and reliability rules for implementation. Detailed domain rules, schemas, endpoints, and UI behavior belong to their dedicated contracts.
+Status: Current runtime architecture and reliability contract. Detailed domain rules,
+schemas, endpoints, and UI behavior belong to their dedicated documents.
 
 ## System context
 
@@ -10,7 +11,7 @@ The product has separate patient, doctor, and administrator experiences in one w
 Browser
   | HTTPS + Supabase access token
   v
-Next.js web application ---- generated TypeScript client ----> FastAPI API
+Next.js web application ---- typed HTTP/demo adapter ----> FastAPI API
                                                                    |
                                                                    v
                                                               PostgreSQL
@@ -18,10 +19,10 @@ Next.js web application ---- generated TypeScript client ----> FastAPI API
                                                                    |
                                                      committed outbox rows
                                                                    v
-                                                         outbox dispatcher
+                                                  durable worker poller/dispatcher
                                                                    |
                                                                    v
-Redis broker ------------------------------------------------> Celery worker
+Redis broker ------------------------------ optional Celery transport
                                                                    |
                                                                    +--> SendGrid
                                                                    +--> Google Calendar OAuth
@@ -34,15 +35,18 @@ Supabase Auth issues identities and tokens; the API verifies identity and applie
 
 | Boundary | Responsibilities | Must not own |
 |---|---|---|
-| `apps/web` | Render patient, doctor, and admin experiences; establish the Supabase user session; call the API through the generated client; present pending and failed integration states | Authorization decisions, booking conflict resolution, provider secrets, or hand-written copies of API types |
+| `apps/web` | Render patient, doctor, and admin experiences; establish the Supabase user session; select the typed HTTP or deterministic demo adapter; present pending and failed integration states | Authorization decisions, booking conflict resolution, provider secrets, or hand-written copies of API types |
 | `apps/api` | Verify authentication; enforce server-side RBAC and resource ownership; validate commands; execute booking and clinical transactions; expose OpenAPI; create outbox work atomically | Long-running provider calls or treating Redis as durable business state |
-| `apps/worker` | Dispatch and process committed outbox work; run reminders; call email, calendar, and LLM adapters; retry safely; record outcomes | Creating or invalidating authoritative appointments through provider success or failure |
-| `packages/api-client` | Orval-generated TypeScript bindings from the accepted FastAPI OpenAPI document | Hand-edited generated contracts or independent domain behavior |
+| `apps/worker` | Claim and process committed PostgreSQL outbox work with leases/fencing; run reminders; call email, calendar, and LLM adapters; retry safely; record outcomes | Creating or invalidating authoritative appointments through provider success or failure |
+| `packages/api-client` | Reserved for Orval-generated TypeScript bindings from the accepted FastAPI OpenAPI document; currently a placeholder | Hand-edited generated contracts or independent domain behavior |
 | PostgreSQL | Authoritative users/profile links, schedules, leave, appointments, clinical records, prescriptions, reminder definitions, outbox records, and integration status | Provider credentials in plaintext or transient broker state |
 | Redis/Celery | Task delivery, scheduling support, and short-lived coordination | Slot ownership, booking correctness, or the only copy of required work |
 | Integration adapters | Translate internal commands to provider APIs and normalize provider responses/errors | Domain authorization or mutation of committed clinical/booking truth outside API/worker rules |
 
-FastAPI OpenAPI is the wire-contract source. The generated client is refreshed only from a reviewed OpenAPI artifact; frontend mocks may implement that contract but do not redefine it.
+FastAPI OpenAPI is the wire-contract source. The web adapter currently supports a
+production HTTP mode and an explicit deterministic demo mode. The generated client is
+refreshed only from a reviewed OpenAPI artifact; frontend mocks may implement that
+contract but do not redefine it.
 
 ## Trust, identity, and authorization
 
@@ -103,7 +107,7 @@ Clinical safety decisions and diagnosis remain outside the LLM boundary. The UI 
 
 ### Local development
 
-- The developer runs the Next.js web process, FastAPI process, and Celery worker as separate runtimes.
+- The developer runs the Next.js web process, FastAPI process, and worker poller as separate runtimes; Celery remains an optional transport process.
 - The root `compose.yaml` provides local PostgreSQL and Redis.
 - External providers use explicit development credentials or fakes selected through configuration. No real secret is committed, and a local environment must be able to exercise core booking correctness without provider availability.
 - API and worker use the same PostgreSQL schema and compatible application version. Database migrations are applied deliberately, not implicitly by each process at startup.
@@ -113,12 +117,12 @@ Clinical safety decisions and diagnosis remain outside the LLM boundary. The UI 
 | Runtime | Target | Network/secret expectations |
 |---|---|---|
 | Next.js web | Vercel | Public HTTPS edge; only browser-safe configuration is exposed to client bundles |
-| FastAPI API | Railway | Public HTTPS API; private database, broker, auth-verification, and provider configuration |
-| Celery worker | Railway | No public application surface; private database/broker access and only required provider credentials |
+| FastAPI API | Render or Railway | Public HTTPS API; private database, broker, auth-verification, and provider configuration |
+| Durable worker poller | Render or Railway | No public application surface; private PostgreSQL access and only required provider credentials |
 | PostgreSQL and Auth | Supabase | PostgreSQL is reached only by server runtimes; Auth public configuration is distinct from privileged server credentials |
 | Redis | Upstash | Transport authentication/encryption; broker data is non-authoritative and recoverable from PostgreSQL outbox state |
 
-Production CORS, callback URLs, OAuth redirects, and service-to-service network policy use explicit allowlists. Hosted services must not share a single all-powerful credential when a narrower credential is available. Deployment and provisioning remain outside Phase 0.
+Production CORS, callback URLs, OAuth redirects, and service-to-service network policy use explicit allowlists. Hosted services must not share a single all-powerful credential when a narrower credential is available. Manifests are configuration only; deployment and provisioning are not claimed.
 
 ## Observability and operations
 
@@ -145,10 +149,12 @@ This contract is an engineering boundary, not a claim of regulatory compliance. 
 
 The following are intentionally not frozen by this document and require dedicated review before their implementation boundary begins:
 
-- Detailed entity schema, identifiers, appointment interval semantics, time-zone/DST policy, hold model and TTL, cancellation/reschedule policy, and PostgreSQL conflict-control mechanism.
-- Endpoint shapes, error catalog, pagination, idempotency header contract, OpenAPI publication workflow, and client-generation versioning.
-- Exact Supabase JWT validation mode, role/claim storage, session refresh behavior, administrator provisioning, and authorization matrix.
-- Celery broker/result configuration, outbox claim algorithm, retry ceilings, terminal-work operator flow, event schema/version policy, and retention periods.
+- Final OpenAPI publication, generated-client versioning, and breaking-change review workflow.
+- Exact Supabase key-rotation/session-refresh operations, administrator provisioning, and
+  production authorization/role-claim governance.
+- Celery broker/result operations, terminal-work operator flow, event-retention policy,
+  and replay tooling; the durable PostgreSQL claim/lease/retry algorithm is implemented
+  by the current worker runtime.
 - Email templates and consent rules; Google Calendar scopes, conflict direction, webhook/reconciliation design, and token-encryption/key-rotation mechanism.
 - LLM provider/model, data-processing terms, prompt/version registry, validation schema, human-review UX, evaluation thresholds, and derived-content retention.
 - Production regions, network controls, secrets platform, backup/restore objectives, disaster recovery targets, log/metric vendor, alert thresholds, and cost controls.

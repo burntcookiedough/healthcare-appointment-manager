@@ -28,7 +28,13 @@ SAFE_LOG_KEYS = frozenset(
 def _safe_fields(fields: Mapping[str, Any]) -> dict[str, Any]:
     """Keep only stable identifiers and bounded operational values."""
 
-    return {key: fields[key] for key in SAFE_LOG_KEYS if key in fields}
+    safe: dict[str, Any] = {}
+    for key in SAFE_LOG_KEYS:
+        if key not in fields:
+            continue
+        value = fields[key]
+        safe[key] = safe_event_type(str(value)) if key == "event_type" else value
+    return safe
 
 
 def safe_event_type(event_type: str) -> str:
