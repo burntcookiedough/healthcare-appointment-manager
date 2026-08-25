@@ -7,7 +7,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0003_visit_follow_up_instructions"
+revision: str = "0003_visit_follow_up"
 down_revision: str | None = "0002_application_domain"
 branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
