@@ -3,7 +3,7 @@ import { apiClient } from "@/lib/api/client";
 import { DoctorLeave, AppointmentDetail, AdminIntegrationItem } from "@/types/api";
 
 interface StateSnapshot {
-  doctorScheduleVersion: number;
+  doctorScheduleVersion: number | null | undefined;
   leaves: DoctorLeave[];
   appointments: AppointmentDetail[];
   integrations: AdminIntegrationItem[];
@@ -31,7 +31,7 @@ async function captureObservableSnapshot(
     }
   }
   return {
-    doctorScheduleVersion: doc.schedule_version ?? 1,
+    doctorScheduleVersion: doc.schedule_version,
     leaves,
     appointments,
     integrations,
@@ -61,7 +61,10 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
   it("valid preview and apply: generates preview, validates version, cancels confirmed appointments, creates dual pending outbox items, and increments doctor schedule version", async () => {
     // Current doctor state before leave
     const initialDoc = await apiClient.getDoctorDetail("doc-001-rajesh");
-    const initialVersion = initialDoc.schedule_version || 1;
+    const initialVersion = initialDoc.schedule_version;
+    if (typeof initialVersion !== "number") {
+      throw new Error("The demo doctor fixture must expose a schedule version for leave tests.");
+    }
 
     // Guaranteed overlapping range covering apt-001-upcoming and apt-002-today-doctor
     const startsAt = new Date(Date.now() - 3600 * 1000).toISOString();
@@ -88,17 +91,16 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
     expect(preview.starts_at).toBe(startsAt);
     expect(preview.ends_at).toBe(endsAt);
     expect(preview.reason).toBe(reason);
-    expect(preview.schedule_version).toBe(initialVersion);
-    expect(preview.affected_holds_count).toBeGreaterThanOrEqual(1);
+    expect(preview.expected_schedule_version).toBe(initialVersion);
+    expect(preview.affected_hold_count).toBeGreaterThanOrEqual(1);
 
     // Guaranteed affected confirmed appointments
-    const affectedAppointments = preview.affected_appointments ?? [];
-    expect(affectedAppointments.length).toBeGreaterThan(0);
-    const affectedIds = affectedAppointments.map((a) => a.id);
+    const affectedIds = preview.affected_appointment_ids ?? [];
+    expect(affectedIds.length).toBeGreaterThan(0);
     expect(affectedIds).toContain("apt-001-upcoming");
     expect(affectedIds).toContain("apt-002-today-doctor");
 
-    // 2. Apply with LeaveApplyRequest containing preview_token and expected_schedule_version
+    // 2. Apply with the production LeaveApplyRequest shape.
     const createdLeave = await apiClient.applyDoctorLeave(
       preview.doctor_id,
       preview.starts_at,
@@ -106,7 +108,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
       preview.reason,
       {
         preview_token: preview.preview_token,
-        expected_schedule_version: preview.schedule_version,
+        expected_version: preview.expected_schedule_version,
       }
     );
 
@@ -186,7 +188,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
         "Nonexistent token leave",
         {
           preview_token: "prev-nonexistent-token-12345",
-          expected_schedule_version: 1,
+          expected_version: 1,
         }
       );
     } catch (e: unknown) {
@@ -221,7 +223,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
       reason,
       {
         preview_token: preview.preview_token,
-        expected_schedule_version: preview.schedule_version,
+        expected_version: preview.expected_schedule_version,
       }
     );
 
@@ -237,7 +239,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
         reason,
         {
           preview_token: preview.preview_token,
-          expected_schedule_version: preview.schedule_version,
+        expected_version: preview.expected_schedule_version,
         }
       );
     } catch (e: unknown) {
@@ -292,7 +294,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
         reason,
         {
           preview_token: preview.preview_token,
-          expected_schedule_version: preview.schedule_version,
+          expected_version: preview.expected_schedule_version,
         }
       );
     } catch (e: unknown) {
@@ -332,7 +334,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
         preview.reason,
         {
           preview_token: preview.preview_token,
-          expected_schedule_version: preview.schedule_version,
+          expected_version: preview.expected_schedule_version,
         }
       );
     } catch (e: unknown) {
@@ -367,7 +369,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
         preview.reason,
         {
           preview_token: preview.preview_token,
-          expected_schedule_version: preview.schedule_version,
+          expected_version: preview.expected_schedule_version,
         }
       );
     } catch (e: unknown) {
@@ -400,7 +402,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
         preview.reason,
         {
           preview_token: preview.preview_token,
-          expected_schedule_version: preview.schedule_version,
+          expected_version: preview.expected_schedule_version,
         }
       );
     } catch (e: unknown) {
@@ -433,7 +435,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
         "Changed reason without regenerating preview", // Mismatched reason
         {
           preview_token: preview.preview_token,
-          expected_schedule_version: preview.schedule_version,
+          expected_version: preview.expected_schedule_version,
         }
       );
     } catch (e: unknown) {
@@ -448,7 +450,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
     assertZeroMutation(beforeSnapshot, afterSnapshot);
   });
 
-  it("rejects mismatched expected_schedule_version with LEAVE_PREVIEW_STALE and zero mutation", async () => {
+  it("rejects mismatched expected_version with LEAVE_PREVIEW_STALE and zero mutation", async () => {
     const preview = await apiClient.previewDoctorLeave("doc-001-rajesh", {
       starts_at: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       ends_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
@@ -466,7 +468,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
         preview.reason,
         {
           preview_token: preview.preview_token,
-          expected_schedule_version: 999, // Mismatched schedule version
+          expected_version: 999, // Mismatched schedule version
         }
       );
     } catch (e: unknown) {
@@ -503,7 +505,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
       previewIntervening.reason,
       {
         preview_token: previewIntervening.preview_token,
-        expected_schedule_version: previewIntervening.schedule_version,
+        expected_version: previewIntervening.expected_schedule_version,
       }
     );
 
@@ -520,7 +522,7 @@ describe("Doctor Leave Impact Preview & Application (LEAVE-002, LEAVE-003, OUTBO
         previewA.reason,
         {
           preview_token: previewA.preview_token,
-          expected_schedule_version: previewA.schedule_version,
+          expected_version: previewA.expected_schedule_version,
         }
       );
     } catch (e: unknown) {

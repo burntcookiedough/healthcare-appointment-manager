@@ -12,7 +12,7 @@ import {
   ArrowRight,
   CalendarOff,
 } from "lucide-react";
-import { isTodayInTimezone } from "@/lib/dates";
+import { getHourBucket, isTodayInTimezone } from "@/lib/dates";
 import {
   BarChart,
   Bar,
@@ -81,11 +81,8 @@ export default function AdminOverviewPage() {
     if (todayAppointments.length > 0) {
       todayAppointments.forEach((apt) => {
         try {
-          const d = new Date(apt.starts_at);
-          const hourStr = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", hour: "numeric", hour12: false }).format(d);
-          const h = Number(hourStr);
-          if (!Number.isInteger(h) || h < 0 || h > 23) return;
-          const bucketKey = `${String(h).padStart(2, "0")}:00`;
+          const bucketKey = getHourBucket(apt.starts_at, "Asia/Kolkata");
+          if (!bucketKey) return;
           const bucket = buckets.get(bucketKey) ?? { confirmed: 0, in_progress: 0 };
 
           if (apt.status === "confirmed") {

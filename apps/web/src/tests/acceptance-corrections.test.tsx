@@ -237,7 +237,7 @@ describe("Frontend Acceptance Contracts & Regression Suite (UI_SPEC.md, ACCEPTAN
       });
     });
 
-    it("strictly requires LeaveApplyRequest with expected_schedule_version when applying leave", async () => {
+    it("strictly requires the production LeaveApplyRequest version field when applying leave", async () => {
       const preview = await apiClient.previewDoctorLeave("doc-001-rajesh", {
         starts_at: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
         ends_at: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
@@ -252,7 +252,7 @@ describe("Frontend Acceptance Contracts & Regression Suite (UI_SPEC.md, ACCEPTAN
         preview.reason,
         {
           preview_token: preview.preview_token,
-          expected_schedule_version: preview.schedule_version,
+          expected_version: preview.expected_schedule_version,
         }
       );
 

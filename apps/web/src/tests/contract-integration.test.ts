@@ -291,7 +291,7 @@ describe("FastAPI Contract Integration & Wire Accuracy Suite", () => {
     expect(visit.id).toBe("vis-999");
     expect(mockFetch.mock.calls[0][0]).toBe("http://127.0.0.1:8000/api/v1/appointments/apt-123/visit");
 
-    // 2. PATCH visit draft
+    // 2. Complete visit after persisting the final draft
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -309,15 +309,7 @@ describe("FastAPI Contract Integration & Wire Accuracy Suite", () => {
       }),
     });
 
-    await apiClient.saveVisitDraft("vis-999", "Updated notes", "Hypertension", [], { expectedVersion: 1 });
-    const patchInit = mockFetch.mock.calls[1][1];
-    expect(mockFetch.mock.calls[1][0]).toBe("http://127.0.0.1:8000/api/v1/visits/vis-999");
-    expect(patchInit.method).toBe("PATCH");
-    const patchBody = JSON.parse(patchInit.body);
-    expect(patchBody.expected_version).toBe(1);
-    expect(patchBody.notes_text).toBe("Updated notes");
-
-    // 3. Complete visit
+    // 3. Completion uses the version returned by the final draft save.
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -336,13 +328,33 @@ describe("FastAPI Contract Integration & Wire Accuracy Suite", () => {
       }),
     });
 
-    await apiClient.completeVisit("vis-999", undefined, undefined, undefined, undefined, { expectedVersion: 2 });
+    await apiClient.completeVisit(
+      "vis-999",
+      "Updated notes",
+      "Hypertension",
+      [],
+      "Follow up in two weeks",
+      { expectedVersion: 1 }
+    );
+    const patchInit = mockFetch.mock.calls[1][1];
+    expect(mockFetch.mock.calls[1][0]).toBe("http://127.0.0.1:8000/api/v1/visits/vis-999");
+    expect(patchInit.method).toBe("PATCH");
+    const patchBody = JSON.parse(patchInit.body);
+    expect(patchBody.expected_version).toBe(1);
+    expect(patchBody.notes_text).toBe("Updated notes");
+
     const completeInit = mockFetch.mock.calls[2][1];
     expect(mockFetch.mock.calls[2][0]).toBe("http://127.0.0.1:8000/api/v1/visits/vis-999/complete");
     expect(completeInit.method).toBe("POST");
     expect(completeInit.headers["Idempotency-Key"]).toBeDefined();
     const completeBody = JSON.parse(completeInit.body);
     expect(completeBody.expected_version).toBe(2);
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body)).toMatchObject({
+      expected_version: 1,
+      notes_text: "Updated notes",
+      advisory_text: "Hypertension",
+      prescription_items: [],
+    });
   });
 
   it("10. The same Idempotency-Key is preserved across an automatic 401 token refresh retry", async () => {
@@ -677,5 +689,49 @@ describe("FastAPI Contract Integration & Wire Accuracy Suite", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("propagates reminder-preferences request failures instead of returning an empty list", async () => {
+    setApiAuthToken("valid-token");
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        items: [{ id: "apt-1", version: 1, patient_id: "pat-1", doctor_id: "doc-1", starts_at: "2026-08-20T03:30:00Z", ends_at: "2026-08-20T04:00:00Z", status: "completed", created_at: "2026-08-19T00:00:00Z", updated_at: "2026-08-20T04:00:00Z" }],
+        next_cursor: null,
+      }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      statusText: "Service Unavailable",
+      json: async () => ({ error: { code: "DEPENDENCY_UNAVAILABLE", message: "Preferences unavailable" } }),
+    });
+
+    await expect(apiClient.getPatientReminders("pat-1")).rejects.toMatchObject({
+      status: 503,
+      error: { code: "DEPENDENCY_UNAVAILABLE" },
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns no reminders when reminder preferences succeed without a timezone", async () => {
+    setApiAuthToken("valid-token");
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        items: [{ id: "apt-1", version: 1, patient_id: "pat-1", doctor_id: "doc-1", starts_at: "2026-08-20T03:30:00Z", ends_at: "2026-08-20T04:00:00Z", status: "completed", created_at: "2026-08-19T00:00:00Z", updated_at: "2026-08-20T04:00:00Z" }],
+        next_cursor: null,
+      }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ patient_id: "pat-1", version: 1, enabled: true, channel: "email", local_times: [] }),
+    });
+
+    await expect(apiClient.getPatientReminders("pat-1")).resolves.toEqual([]);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 });

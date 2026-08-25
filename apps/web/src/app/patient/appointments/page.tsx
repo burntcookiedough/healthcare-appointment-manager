@@ -145,7 +145,7 @@ export default function PatientAppointmentsPage() {
               <div className="flex items-center gap-2.5 sm:self-center">
                 {apt.visit_id && (
                   <Button asChild variant="outline" size="sm" className="text-xs">
-                    <Link href={`/patient/visits/${apt.visit_id}`}>
+                    <Link href={`/patient/visits/${apt.id}`}>
                       <FileText className="h-3.5 w-3.5 text-[#26734d]" />
                       <span>Visit Notes</span>
                     </Link>

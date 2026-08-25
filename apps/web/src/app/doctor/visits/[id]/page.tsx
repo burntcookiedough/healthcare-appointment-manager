@@ -56,13 +56,14 @@ export default function DoctorVisitEditorPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const rawId = params?.id;
-  const visitId = typeof rawId === "string" && rawId.trim() !== "" ? rawId : "";
+  const appointmentId = typeof rawId === "string" && rawId.trim() !== "" ? rawId : "";
 
   const { data: visit, isLoading, error } = useQuery({
-    queryKey: ["doctor-visit", visitId],
-    queryFn: () => apiClient.getVisit(visitId),
-    enabled: Boolean(visitId),
+    queryKey: ["doctor-visit", appointmentId],
+    queryFn: () => apiClient.getVisit(appointmentId),
+    enabled: Boolean(appointmentId),
   });
+  const visitId = visit?.id ?? "";
 
   const [notes, setNotes] = React.useState("");
   const [diagnosis, setDiagnosis] = React.useState("");
@@ -156,8 +157,8 @@ export default function DoctorVisitEditorPage() {
     },
     onSuccess: (savedVisit) => {
       toast.success("Visit draft saved.");
-      queryClient.setQueryData(["doctor-visit", visitId], savedVisit);
-      queryClient.invalidateQueries({ queryKey: ["doctor-visit", visitId] });
+      queryClient.setQueryData(["doctor-visit", appointmentId], savedVisit);
+      queryClient.invalidateQueries({ queryKey: ["doctor-visit", appointmentId] });
     },
     onError: (err: { error?: { message?: string } }) => {
       toast.error(err?.error?.message || "Failed to save draft.");
@@ -174,8 +175,8 @@ export default function DoctorVisitEditorPage() {
     onSuccess: (completedVisit) => {
       toast.success("Consultation completed and prescription finalized.");
       setIsFinalizeDialogOpen(false);
-      queryClient.setQueryData(["doctor-visit", visitId], completedVisit);
-      queryClient.invalidateQueries({ queryKey: ["doctor-visit", visitId] });
+      queryClient.setQueryData(["doctor-visit", appointmentId], completedVisit);
+      queryClient.invalidateQueries({ queryKey: ["doctor-visit", appointmentId] });
       queryClient.invalidateQueries({ queryKey: ["doctor-appointments"] });
       router.push("/doctor");
     },
@@ -186,7 +187,7 @@ export default function DoctorVisitEditorPage() {
 
   if (isLoading) return <CardSkeleton />;
 
-  if (!visitId || error || !visit) {
+  if (!appointmentId || error || !visit) {
     return (
       <EmptyState
         icon={AlertCircle}

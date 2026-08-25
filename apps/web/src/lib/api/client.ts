@@ -117,6 +117,77 @@ function asPrescriptionFrequency(value: string, itemId: string): PrescriptionFre
   };
 }
 
+function isBlankPrescriptionItem(item: Partial<PrescriptionItem>): boolean {
+  return (
+    !item.medication_name?.trim() &&
+    !item.dosage?.trim() &&
+    !item.route?.trim() &&
+    !item.frequency?.trim() &&
+    !item.start_date?.trim() &&
+    !item.end_date?.trim() &&
+    (item.duration_days === undefined || item.duration_days === null || item.duration_days === 0) &&
+    !item.instructions?.trim()
+  );
+}
+
+function filterBlankPrescriptionItems(items: PrescriptionItem[]): PrescriptionItem[] {
+  return items.filter((item) => !isBlankPrescriptionItem(item));
+}
+
+function requireStrictPrescriptionItems(items: PrescriptionItem[]): void {
+  for (const [index, item] of items.entries()) {
+    if (isBlankPrescriptionItem(item)) {
+      throw {
+        status: 422,
+        error: {
+          code: "VALIDATION_FAILED",
+          message: `Prescription item ${index + 1} is incomplete.`,
+        },
+        request_id: `req-prescription-${Date.now()}`,
+      };
+    }
+    if (!item.medication_name?.trim() || !item.dosage?.trim()) {
+      throw {
+        status: 422,
+        error: {
+          code: "VALIDATION_FAILED",
+          message: `Prescription item ${index + 1} is missing medication name or dosage.`,
+        },
+        request_id: `req-prescription-${Date.now()}`,
+      };
+    }
+    asPrescriptionFrequency(item.frequency, item.id);
+    if (!item.start_date?.trim() || !item.instructions?.trim()) {
+      throw {
+        status: 422,
+        error: {
+          code: "VALIDATION_FAILED",
+          message: `Prescription item ${index + 1} is missing required instructions or start date.`,
+        },
+        request_id: `req-prescription-${Date.now()}`,
+      };
+    }
+  }
+}
+
+function validateAppointmentDurations(durations: number[] | null | undefined): void {
+  if (
+    durations !== undefined &&
+    durations !== null &&
+    !durations.every((duration) => Number.isInteger(duration) && duration >= 5 && duration <= 480)
+  ) {
+    throw {
+      status: 422,
+      error: {
+        code: "VALIDATION_FAILED",
+        message: "Appointment durations must be whole minutes between 5 and 480.",
+        fields: [{ path: "appointment_durations_minutes", code: "invalid_duration", message: "Use whole minutes from 5 through 480." }],
+      },
+      request_id: `req-duration-${Date.now()}`,
+    };
+  }
+}
+
 function normalizeDoctor<T extends DoctorSummary>(doctor: T): T {
   return {
     ...doctor,
@@ -384,6 +455,7 @@ export const apiClient = {
     doctorId: string,
     req: WorkingHoursReplaceRequest
   ): Promise<WorkingHoursResponse> => {
+    validateAppointmentDurations(req.appointment_durations_minutes);
     if (isDemoMode()) {
       return mockDb.replaceDoctorWorkingHours(doctorId, req);
     }
@@ -589,10 +661,10 @@ export const apiClient = {
   },
 
   // Clinical Visits & Prescriptions
-  getVisit: async (appointmentIdOrVisitId: string): Promise<Visit> => {
-    if (isDemoMode()) return mockDb.getVisit(appointmentIdOrVisitId);
+  getVisit: async (appointmentId: string): Promise<Visit> => {
+    if (isDemoMode()) return mockDb.getVisit(appointmentId);
     // FastAPI route is GET /appointments/{appointment_id}/visit
-    return requestHttp<Visit>(`/appointments/${encodeURIComponent(appointmentIdOrVisitId)}/visit`);
+    return requestHttp<Visit>(`/appointments/${encodeURIComponent(appointmentId)}/visit`);
   },
 
   getOrCreateVisitForAppointment: async (
@@ -626,7 +698,9 @@ export const apiClient = {
     if (isDemoMode()) {
       const notes = typeof notesOrRequest === "string" ? notesOrRequest : notesOrRequest.notes_text;
       const diag = typeof notesOrRequest === "string" ? (diagnosis || "") : (notesOrRequest.advisory_text ?? "");
-      const items = typeof notesOrRequest === "string" ? (prescriptionItems || []) : (notesOrRequest.prescription_items as PrescriptionItem[] || []);
+      const items = filterBlankPrescriptionItems(
+        typeof notesOrRequest === "string" ? (prescriptionItems || []) : (notesOrRequest.prescription_items as PrescriptionItem[] || [])
+      );
       const expectedVersion =
         typeof notesOrRequest === "string"
           ? requireExpectedVersion(options?.expectedVersion, "the visit")
@@ -640,7 +714,7 @@ export const apiClient = {
             expected_version: requireExpectedVersion(options?.expectedVersion, "the visit"),
             notes_text: notesOrRequest,
             prescription_items: prescriptionItems
-              ? prescriptionItems.map((item) => ({
+              ? filterBlankPrescriptionItems(prescriptionItems).map((item) => ({
                   medication_name: item.medication_name,
                   dosage: item.dosage,
                   route: item.route,
@@ -655,6 +729,9 @@ export const apiClient = {
           }
         : {
             ...notesOrRequest,
+            ...(notesOrRequest.prescription_items
+              ? { prescription_items: notesOrRequest.prescription_items.filter((item) => !isBlankPrescriptionItem(item)) }
+              : {}),
             expected_version: requireExpectedVersion(notesOrRequest.expected_version, "the visit"),
           };
 
@@ -674,6 +751,7 @@ export const apiClient = {
   ): Promise<Visit> => {
     if (isDemoMode()) {
       const expectedVersion = requireExpectedVersion(options?.expectedVersion, "the visit");
+      requireStrictPrescriptionItems(prescriptionItems || []);
       return mockDb.completeVisit(
         visitId,
         notes || "",
@@ -684,9 +762,23 @@ export const apiClient = {
       );
     }
     const expectedVersion = requireExpectedVersion(options?.expectedVersion, "the visit");
+    const finalItems = prescriptionItems || [];
+    requireStrictPrescriptionItems(finalItems);
+
+    // The completion endpoint only transitions an already-persisted draft. Save
+    // the final editor state first, then use its optimistic-concurrency version
+    // for the atomic completion command.
+    const savedDraft = await apiClient.saveVisitDraft(
+      visitId,
+      notes ?? "",
+      diagnosis ?? "",
+      finalItems,
+      { expectedVersion }
+    );
+
     return requestHttp<Visit>(`/visits/${encodeURIComponent(visitId)}/complete`, {
       method: "POST",
-      body: { expected_version: expectedVersion },
+      body: { expected_version: savedDraft.version },
       idempotent: true,
       idempotencyKey: options?.idempotencyKey,
     });
@@ -748,7 +840,7 @@ export const apiClient = {
     // The appointments collection is already scoped to the authenticated patient by the API.
     const appointments = await apiClient.getAppointments("completed");
     if (appointments.length === 0) return [];
-    const preferences = await apiClient.getReminderPreferences().catch(() => null);
+    const preferences = await apiClient.getReminderPreferences();
     const timezone = preferences?.timezone;
     if (!timezone) return [];
     const today = formatDateOnly(new Date(), timezone);

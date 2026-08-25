@@ -88,7 +88,7 @@ export interface DoctorSummary {
   avatar_url?: string | null;
   biography?: string | null;
   next_available_at?: string | null;
-  schedule_version?: number;
+  schedule_version?: number | null;
   experience_years?: number;
   consultation_fee?: number;
 }
@@ -472,7 +472,7 @@ export interface DoctorLeave {
   created_at: string;
   updated_at?: string;
   expected_schedule_version?: number;
-  schedule_version?: number;
+  schedule_version?: number | null;
 }
 
 export interface LeavePreviewRequest {
@@ -508,7 +508,7 @@ export interface LeavePreviewResponse {
   affected_appointment_count?: number;
   expires_at?: string;
   // Demo-only compatibility projections. Production responses use the fields above.
-  schedule_version?: number;
+  schedule_version?: number | null;
   affected_holds_count?: number;
   affected_appointments?: AppointmentSummary[];
 }

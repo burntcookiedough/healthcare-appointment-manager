@@ -300,7 +300,7 @@ export default function PatientDashboard() {
                   </p>
                   {past.visit_id && (
                     <Link
-                      href={`/patient/visits/${past.visit_id}`}
+                      href={`/patient/visits/${past.id}`}
                       className="inline-flex min-h-[44px] items-center gap-1.5 px-2 py-1 text-xs font-bold text-[#111111] hover:underline"
                     >
                       <FileText className="h-3.5 w-3.5 text-[#26734d]" />

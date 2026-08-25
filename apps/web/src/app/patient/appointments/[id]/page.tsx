@@ -282,7 +282,7 @@ export default function PatientAppointmentDetailPage() {
               </p>
             </div>
             <Button asChild variant="primary" size="sm">
-              <Link href={`/patient/visits/${appointment.visit_id}`}>
+              <Link href={`/patient/visits/${appointment.id}`}>
                 <FileText className="h-4 w-4 text-[#efff72]" />
                 <span>View Summary</span>
               </Link>

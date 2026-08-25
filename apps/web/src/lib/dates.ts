@@ -101,6 +101,30 @@ export function formatTime(dateInput: string | Date, timeZone = APP_TIMEZONE): s
 }
 
 /**
+ * Return an hourly chart bucket using a 0–23 clock in the requested timezone.
+ * The explicit h23 cycle keeps local midnight in the 00:00 bucket.
+ */
+export function getHourBucket(
+  dateInput: string | Date,
+  timeZone = APP_TIMEZONE
+): string | null {
+  try {
+    const d = parseDate(dateInput);
+    if (isNaN(d.getTime())) return null;
+
+    const hour = Number(new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "numeric",
+      hourCycle: "h23",
+    }).format(d));
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null;
+    return `${String(hour).padStart(2, "0")}:00`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Format date and time in Asia/Kolkata (e.g. "Aug 25, 2026 at 2:30 PM")
  */
 export function formatDateTime(

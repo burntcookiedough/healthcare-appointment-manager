@@ -24,17 +24,17 @@ export default function PatientVisitSummaryPage() {
   const params = useParams();
   const router = useRouter();
   const rawId = params?.id;
-  const visitId = typeof rawId === "string" && rawId.trim() !== "" ? rawId : "";
+  const appointmentId = typeof rawId === "string" && rawId.trim() !== "" ? rawId : "";
 
   const { data: visit, isLoading, error } = useQuery({
-    queryKey: ["patient-visit-summary", visitId],
-    queryFn: () => apiClient.getVisit(visitId),
-    enabled: Boolean(visitId),
+    queryKey: ["patient-visit-summary", appointmentId],
+    queryFn: () => apiClient.getVisit(appointmentId),
+    enabled: Boolean(appointmentId),
   });
 
   if (isLoading) return <CardSkeleton />;
 
-  if (!visitId || error || !visit) {
+  if (!appointmentId || error || !visit) {
     return (
       <EmptyState
         icon={AlertCircle}

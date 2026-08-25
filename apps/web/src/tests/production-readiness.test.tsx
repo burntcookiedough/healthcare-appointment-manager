@@ -7,6 +7,7 @@ import {
   formatTime,
   formatDateOnly,
   formatRelative,
+  getHourBucket,
   parseLocalISTToUTCISO,
   isTodayInTimezone,
 } from "@/lib/dates";
@@ -59,6 +60,10 @@ describe("Production Readiness & Contract Compliance Suite", () => {
 
     it("keeps an invalid relative date human-readable instead of returning NaN", () => {
       expect(formatRelative("not-a-date")).toBe("not-a-date");
+    });
+
+    it("keeps Kolkata midnight in the 00:00 metrics bucket", () => {
+      expect(getHourBucket("2026-08-24T18:30:00.000Z", "Asia/Kolkata")).toBe("00:00");
     });
 
     it("generates doctor availability slots in Asia/Kolkata working hours without appending .000Z", async () => {
@@ -130,6 +135,24 @@ describe("Production Readiness & Contract Compliance Suite", () => {
       const updatedDocs = await apiClient.getDoctors();
       expect(updatedDocs.length).toBe(initialCount + 1);
       expect(updatedDocs.some((d) => d.id === newDoc.id)).toBe(true);
+    });
+
+    it("rejects invalid replacement durations before changing the doctor schedule", async () => {
+      const before = await apiClient.getDoctorDetail("doc-001-rajesh");
+      const schedule = await apiClient.getDoctorWorkingHours("doc-001-rajesh");
+
+      await expect(
+        apiClient.replaceDoctorWorkingHours("doc-001-rajesh", {
+          expected_version: schedule.version,
+          timezone: schedule.timezone,
+          appointment_durations_minutes: [4, 30],
+          intervals: schedule.intervals,
+        })
+      ).rejects.toMatchObject({ status: 422, error: { code: "VALIDATION_FAILED" } });
+
+      const after = await apiClient.getDoctorDetail("doc-001-rajesh");
+      expect(after.schedule_version).toBe(before.schedule_version);
+      expect(after.appointment_durations_minutes).toEqual(before.appointment_durations_minutes);
     });
   });
 

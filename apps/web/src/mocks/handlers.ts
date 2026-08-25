@@ -157,7 +157,7 @@ class MockDatabase {
     }
   }
 
-  private requireCurrentVersion(version: number | undefined, resource: string): number {
+  private requireCurrentVersion(version: number | null | undefined, resource: string): number {
     if (typeof version !== "number" || !Number.isInteger(version) || version < 1) {
       throw {
         status: 503,
@@ -170,6 +170,27 @@ class MockDatabase {
 
   private validatePrescriptionItems(items: PrescriptionItem[]): void {
     for (const [index, item] of items.entries()) {
+      const isBlank =
+        !item.medication_name?.trim() &&
+        !item.dosage?.trim() &&
+        !item.route?.trim() &&
+        !item.frequency?.trim() &&
+        !item.start_date?.trim() &&
+        !item.end_date?.trim() &&
+        (item.duration_days === undefined || item.duration_days === null || item.duration_days === 0) &&
+        !item.instructions?.trim();
+      if (isBlank) {
+        throw {
+          status: 422,
+          error: { code: "VALIDATION_FAILED", message: `Prescription item ${index + 1} is incomplete.` },
+        };
+      }
+      if (!item.medication_name?.trim() || !item.dosage?.trim()) {
+        throw {
+          status: 422,
+          error: { code: "VALIDATION_FAILED", message: `Prescription item ${index + 1} is missing medication name or dosage.` },
+        };
+      }
       if (!STRUCTURED_PRESCRIPTION_FREQUENCIES.has(item.frequency)) {
         throw {
           status: 422,
@@ -513,13 +534,29 @@ class MockDatabase {
     const currentScheduleVersion = this.requireCurrentVersion(doctor.schedule_version, "Doctor schedule");
     const currentDoctorVersion = this.requireCurrentVersion(doctor.version, "Doctor profile");
     this.requireExpectedVersion(req.expected_version, currentScheduleVersion, "Doctor schedule");
+    const durations = req.appointment_durations_minutes;
+    if (
+      durations !== undefined &&
+      durations !== null &&
+      !durations.every((duration) => Number.isInteger(duration) && duration >= 5 && duration <= 480)
+    ) {
+      throw {
+        status: 422,
+        error: {
+          code: "VALIDATION_FAILED",
+          message: "Appointment durations must be whole minutes between 5 and 480.",
+          fields: [{ path: "appointment_durations_minutes", code: "invalid_duration", message: "Use whole minutes from 5 through 480." }],
+        },
+      };
+    }
     if (req.timezone !== undefined && req.timezone !== null) {
       doctor.timezone = req.timezone;
       doctor.time_zone = req.timezone;
     }
-    if (req.appointment_durations_minutes !== undefined && req.appointment_durations_minutes !== null) {
-      doctor.appointment_durations_minutes = [...req.appointment_durations_minutes];
-      doctor.accepted_durations = [...req.appointment_durations_minutes];
+    if (durations !== undefined && durations !== null) {
+      const normalizedDurations = Array.from(new Set(durations)).sort((a, b) => a - b);
+      doctor.appointment_durations_minutes = normalizedDurations;
+      doctor.accepted_durations = [...normalizedDurations];
     }
     doctor.working_hours = req.intervals.map((interval) => ({ ...interval }));
     doctor.schedule_version = currentScheduleVersion + 1;
@@ -847,9 +884,9 @@ class MockDatabase {
   }
 
   // Clinical Visits & Prescriptions
-  public async getVisit(visitId: string): Promise<Visit> {
+  public async getVisit(appointmentId: string): Promise<Visit> {
     await this.simulateNetwork();
-    const visit = this.visits.get(visitId);
+    const visit = Array.from(this.visits.values()).find((candidate) => candidate.appointment_id === appointmentId);
     if (!visit) {
       throw { status: 404, error: { code: "RESOURCE_NOT_FOUND", message: "Clinical visit record not found" } };
     }
@@ -867,8 +904,10 @@ class MockDatabase {
       throw { status: 404, error: { code: "RESOURCE_NOT_FOUND", message: "Appointment or doctor not found" } };
     }
 
+    const visitId = `vis-${Date.now()}`;
+    const prescriptionId = `rx-${Date.now()}`;
     const newVisit: Visit = {
-      id: `vis-${Date.now()}`,
+      id: visitId,
       version: 1,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -880,11 +919,11 @@ class MockDatabase {
       diagnosis: "",
       ai_summary_status: "pending",
       prescription: {
-        id: `rx-${Date.now()}`,
+        id: prescriptionId,
         version: 1,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        visit_id: `vis-${Date.now()}`,
+        visit_id: visitId,
         doctor_id: doctorId,
         doctor_name: doc.display_name ?? doc.name,
         patient_id: apt.patient_id,
@@ -915,12 +954,24 @@ class MockDatabase {
       throw { status: 404, error: { code: "RESOURCE_NOT_FOUND", message: "Visit not found" } };
     }
     this.requireExpectedVersion(expectedVersion, visit.version, "Visit");
-    this.validatePrescriptionItems(prescriptionItems);
+    const draftItems = prescriptionItems.filter((item) => {
+      return !(
+        !item.medication_name?.trim() &&
+        !item.dosage?.trim() &&
+        !item.route?.trim() &&
+        !item.frequency?.trim() &&
+        !item.start_date?.trim() &&
+        !item.end_date?.trim() &&
+        (item.duration_days === undefined || item.duration_days === null || item.duration_days === 0) &&
+        !item.instructions?.trim()
+      );
+    });
+    this.validatePrescriptionItems(draftItems);
 
     visit.doctor_notes = notes;
     visit.diagnosis = diagnosis;
     if (visit.prescription) {
-      visit.prescription.items = prescriptionItems;
+      visit.prescription.items = draftItems;
       visit.prescription.updated_at = new Date().toISOString();
       visit.prescription.version += 1;
     }
@@ -1114,7 +1165,7 @@ class MockDatabase {
 
     const previewToken = `prev-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const scheduleVersion = doc.schedule_version;
-    if (!scheduleVersion) {
+    if (typeof scheduleVersion !== "number" || !Number.isInteger(scheduleVersion) || scheduleVersion < 1) {
       throw { status: 503, error: { code: "DEPENDENCY_UNAVAILABLE", message: "Doctor schedule version is unavailable." } };
     }
 

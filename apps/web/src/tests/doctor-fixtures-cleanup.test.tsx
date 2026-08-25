@@ -59,10 +59,13 @@ describe("Doctor Fixture Fallback Removal Suite (Admin Leave & Doctor Detail)", 
         starts_at: "2026-08-26T03:30:00.000Z",
         ends_at: "2026-08-28T12:30:00.000Z",
         reason: "Attending Medical Conference",
-        schedule_version: 1,
+        expected_schedule_version: 1,
         preview_token: "mock-preview-token-123",
-        affected_appointments: [],
-        affected_holds_count: 0,
+        affected_appointment_ids: [],
+        affected_appointment_count: 0,
+        affected_hold_ids: [],
+        affected_hold_count: 0,
+        expires_at: "2026-08-26T12:30:00.000Z",
       });
 
       const user = userEvent.setup();

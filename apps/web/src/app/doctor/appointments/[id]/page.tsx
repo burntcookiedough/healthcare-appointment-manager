@@ -43,7 +43,7 @@ export default function DoctorAppointmentWorkspacePage() {
       return apiClient.getOrCreateVisitForAppointment(appointment.id, appointment.doctor_id);
     },
     onSuccess: (visit) => {
-      router.push(`/doctor/visits/${visit.id}`);
+      router.push(`/doctor/visits/${visit.appointment_id}`);
     },
     onError: (err: { error?: { message?: string } }) => {
       toast.error(err?.error?.message || "Failed to initialize clinical visit workspace.");
@@ -111,7 +111,7 @@ export default function DoctorAppointmentWorkspacePage() {
                 size="default"
                 className="w-full sm:w-auto whitespace-normal text-center leading-tight"
               >
-                <Link href={`/doctor/visits/${appointment.visit_id}`}>
+                <Link href={`/doctor/visits/${appointment.id}`}>
                   <FileText className="h-4 w-4 shrink-0" />
                   <span>Resume Consultation Notes</span>
                 </Link>
