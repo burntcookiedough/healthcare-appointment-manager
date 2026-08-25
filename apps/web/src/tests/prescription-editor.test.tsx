@@ -37,6 +37,7 @@ describe("Structured Prescriptions and Deterministic Reminders (RX-001, RX-002)"
     );
 
     expect(completed.status).toBe("completed");
+    expect(completed.follow_up_instructions).toBe("Follow up with HbA1c in 3 months");
     expect(completed.prescription?.items).toHaveLength(2);
     expect(completed.prescription?.items[0].medication_name).toBe("Metformin Hydrochloride");
   });

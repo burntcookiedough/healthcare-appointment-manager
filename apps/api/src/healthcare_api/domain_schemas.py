@@ -275,6 +275,7 @@ class VisitUpdateRequest(VersionedRequest):
     urgency: Literal["routine", "soon", "urgent"] | None = None
     prescription_items: list[PrescriptionItemInput] | None = Field(default=None, max_length=100)
     advisory_text: Annotated[str | None, Field(max_length=10000)] = None
+    follow_up_instructions: Annotated[str | None, Field(max_length=10000)] = None
 
 
 class VisitCompleteRequest(VersionedRequest):
@@ -367,6 +368,7 @@ class PatientVisitResponse(WireModel):
     status: Literal["completed"]
     version: int
     urgency: str | None = None
+    follow_up_instructions: str | None = None
     prescription: PatientPrescriptionResponse | None = None
     generated_artifacts: list[PatientGeneratedArtifactResponse]
     created_at: datetime
@@ -381,6 +383,7 @@ class VisitResponse(WireModel):
     status: Literal["draft", "completed"]
     version: int
     urgency: str | None = None
+    follow_up_instructions: str | None = None
     notes: list[VisitNoteResponse]
     prescription: PrescriptionResponse | None = None
     generated_artifacts: list[GeneratedArtifactResponse]

@@ -292,57 +292,58 @@ export async function requestHttp<T>(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), DEFAULT_HTTP_TIMEOUT_MS);
 
-  let response: Response;
   try {
-    response = await fetch(url, {
+    const response = await fetch(url, {
       method,
       headers,
       body: bodyContent,
       signal: controller.signal,
     });
-  } finally {
-    clearTimeout(timeoutId);
-  }
 
-  // Handle 401 token expiry with automatic deduplicated refresh & retry reusing the exact same idempotency key
-  if (response.status === 401 && !options.skipAuthRefresh) {
-    const refreshed = await refreshSessionDeduplicated(setApiAuthToken);
-    if (refreshed && refreshed.access_token) {
-      return requestHttp<T>(path, {
-        ...options,
-        idempotencyKey: stableIdempotencyKey,
-        skipAuthRefresh: true,
-      });
-    } else {
-      clearStoredSession();
-      setApiAuthToken(null);
+    // Handle 401 token expiry with automatic deduplicated refresh & retry reusing the exact same idempotency key
+    if (response.status === 401 && !options.skipAuthRefresh) {
+      const refreshed = await refreshSessionDeduplicated(setApiAuthToken);
+      if (refreshed && refreshed.access_token) {
+        return await requestHttp<T>(path, {
+          ...options,
+          idempotencyKey: stableIdempotencyKey,
+          skipAuthRefresh: true,
+        });
+      } else {
+        clearStoredSession();
+        setApiAuthToken(null);
+      }
     }
-  }
 
-  if (response.status === 204) {
-    return undefined as unknown as T;
-  }
+    if (response.status === 204) {
+      return undefined as unknown as T;
+    }
 
-  if (!response.ok) {
-    let errorEnvelope: ApiErrorEnvelope;
-    try {
-      errorEnvelope = await response.json();
-    } catch {
-      errorEnvelope = {
-        error: {
-          code: "HTTP_ERROR",
-          message: `Request failed with status ${response.status} (${response.statusText})`,
-        },
-        request_id: `req-${Date.now()}`,
+    if (!response.ok) {
+      let errorEnvelope: ApiErrorEnvelope;
+      try {
+        errorEnvelope = await response.json();
+      } catch {
+        errorEnvelope = {
+          error: {
+            code: "HTTP_ERROR",
+            message: `Request failed with status ${response.status} (${response.statusText})`,
+          },
+          request_id: `req-${Date.now()}`,
+        };
+      }
+      throw {
+        status: response.status,
+        ...errorEnvelope,
       };
     }
-    throw {
-      status: response.status,
-      ...errorEnvelope,
-    };
-  }
 
-  return response.json();
+    return await response.json();
+  } finally {
+    // Keep the abort signal alive until the response body (including error JSON)
+    // has been consumed, then release the timer on every success/failure path.
+    clearTimeout(timeoutId);
+  }
 }
 
 export const apiClient = {
@@ -693,7 +694,7 @@ export const apiClient = {
     notesOrRequest: string | VisitUpdateRequest,
     diagnosis?: string,
     prescriptionItems?: PrescriptionItem[],
-    options?: { expectedVersion?: number }
+    options?: { expectedVersion?: number; followUpInstructions?: string | null }
   ): Promise<Visit> => {
     if (isDemoMode()) {
       const notes = typeof notesOrRequest === "string" ? notesOrRequest : notesOrRequest.notes_text;
@@ -705,7 +706,16 @@ export const apiClient = {
         typeof notesOrRequest === "string"
           ? requireExpectedVersion(options?.expectedVersion, "the visit")
           : notesOrRequest.expected_version;
-      return mockDb.saveVisitDraft(visitId, notes, diag, items, expectedVersion);
+      return mockDb.saveVisitDraft(
+        visitId,
+        notes,
+        diag,
+        items,
+        expectedVersion,
+        typeof notesOrRequest === "string"
+          ? options?.followUpInstructions
+          : notesOrRequest.follow_up_instructions
+      );
     }
 
     const payload: VisitUpdateRequest =
@@ -726,6 +736,9 @@ export const apiClient = {
                 }))
               : null,
             advisory_text: diagnosis ?? null,
+            ...(options?.followUpInstructions !== undefined
+              ? { follow_up_instructions: options.followUpInstructions }
+              : {}),
           }
         : {
             ...notesOrRequest,
@@ -773,7 +786,7 @@ export const apiClient = {
       notes ?? "",
       diagnosis ?? "",
       finalItems,
-      { expectedVersion }
+      { expectedVersion, followUpInstructions }
     );
 
     return requestHttp<Visit>(`/visits/${encodeURIComponent(visitId)}/complete`, {

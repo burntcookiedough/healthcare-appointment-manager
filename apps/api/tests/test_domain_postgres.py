@@ -768,6 +768,7 @@ async def test_visit_sources_prescription_artifacts_and_reminders_are_persisted(
             "expected_version": 1,
             "notes_text": "original doctor note",
             "urgency": "urgent",
+            "follow_up_instructions": "Return in three weeks with a fasting lipid profile.",
             "advisory_text": "Advisory prose must not drive reminders.",
             "prescription_items": [
                 {
@@ -789,8 +790,14 @@ async def test_visit_sources_prescription_artifacts_and_reminders_are_persisted(
     )
     assert update_visit.status_code == 200
     assert update_visit.json()["prescription"]["status"] == "draft"
+    assert update_visit.json()["follow_up_instructions"] == (
+        "Return in three weeks with a fasting lipid profile."
+    )
     assert complete.status_code == 200
     assert complete.json()["status"] == "completed"
+    assert complete.json()["follow_up_instructions"] == (
+        "Return in three weeks with a fasting lipid profile."
+    )
     assert complete.json()["prescription"]["status"] == "completed"
     assert {artifact["status"] for artifact in complete.json()["generated_artifacts"]} == {
         "pending"
@@ -853,6 +860,7 @@ async def test_visit_sources_prescription_artifacts_and_reminders_are_persisted(
             ).scalars()
         )
         appointment = await session.get(Appointment, appointment_id)
+        persisted_visit = await session.get(Visit, visit_id)
     assert [row.version for row in symptoms_rows] == [1, 2]
     assert [row.symptoms_text for row in symptoms_rows] == [
         "original symptom visit",
@@ -861,6 +869,10 @@ async def test_visit_sources_prescription_artifacts_and_reminders_are_persisted(
     assert [row.version for row in notes_rows] == [1]
     assert notes_rows[0].notes_text == "original doctor note"
     assert prescription is not None and prescription.status == "completed"
+    assert persisted_visit is not None
+    assert persisted_visit.follow_up_instructions == (
+        "Return in three weeks with a fasting lipid profile."
+    )
     assert len(items) == 1 and items[0].frequency == "twice_daily"
     assert {artifact.artifact_type for artifact in appointment_artifacts} == {
         "pre_visit_brief",
@@ -896,11 +908,17 @@ async def test_visit_sources_prescription_artifacts_and_reminders_are_persisted(
     assert reminder_replay.json() == reminder.json()
     assert patient_view.status_code == 200
     assert patient_view.json()["status"] == "completed"
+    assert patient_view.json()["follow_up_instructions"] == (
+        "Return in three weeks with a fasting lipid profile."
+    )
     assert "notes" not in patient_view.json()
     assert "advisory_text" not in patient_view.text
     assert "original doctor note" not in patient_view.text
     assert doctor_view.status_code == 200
     assert doctor_view.json()["notes"][0]["notes_text"] == "original doctor note"
+    assert doctor_view.json()["follow_up_instructions"] == (
+        "Return in three weeks with a fasting lipid profile."
+    )
     assert doctor_view.json()["prescription"]["advisory_text"] == (
         "Advisory prose must not drive reminders."
     )

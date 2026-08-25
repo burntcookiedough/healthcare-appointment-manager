@@ -419,6 +419,7 @@ class Visit(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'draft'"))
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     urgency: Mapped[str | None] = mapped_column(Text)
+    follow_up_instructions: Mapped[str | None] = mapped_column(Text)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
@@ -428,6 +429,10 @@ class Visit(Base, TimestampMixin):
         CheckConstraint(
             "urgency IS NULL OR urgency IN ('routine', 'soon', 'urgent')",
             name="ck_visits_urgency",
+        ),
+        CheckConstraint(
+            "follow_up_instructions IS NULL OR char_length(follow_up_instructions) <= 10000",
+            name="ck_visits_follow_up_instructions_length",
         ),
         Index("ix_visits_doctor_status", "doctor_id", "status"),
     )

@@ -144,7 +144,10 @@ these semantics:
 - `AppointmentDetail`: summary fields plus authorized original symptoms, generated
   brief status/content when permitted, cancellation/reschedule metadata, and visit link.
 - `Visit`: common fields plus `appointment_id`, original doctor-note record/version,
-  generated artifact status, `status` (`draft|completed`), and prescription.
+  optional bounded `follow_up_instructions` text (maximum 10,000 characters), generated artifact status,
+  `status` (`draft|completed`), and prescription. Follow-up instructions are doctor-
+  authored patient guidance, are returned only in the authorized doctor view or the
+  completed patient-safe view, and are immutable after completion.
 - `Prescription`: common fields plus `visit_id` and ordered structured items. An item
   contains `id`, medication display name, dosage, route if applicable, frequency,
   `start_date`, optional `end_date`/duration, and patient instructions (`RX-001`).
@@ -208,7 +211,7 @@ schema component names and enums must be frozen in FastAPI before generating the
 | `GET /appointments/{appointment_id}/symptoms` | owning patient, assigned doctor | Return immutable original symptom versions plus separately labeled generated-brief status when authorized. |
 | `GET /appointments/{appointment_id}/visit` | owning patient after completion, assigned doctor | Return patient-safe completed view or doctor draft/detail view. Patient access follows publication/completion policy. |
 | `POST /appointments/{appointment_id}/visit` | assigned doctor | **Idempotent.** Open the one draft visit for a confirmed or in-progress appointment; replay returns that visit. |
-| `PATCH /visits/{visit_id}` | assigned doctor | **Versioned.** Append a new original-note version and replace the draft structured prescription as one validated change; never overwrite prior source text. |
+| `PATCH /visits/{visit_id}` | assigned doctor | **Versioned.** Append a new original-note version, replace the draft structured prescription, and optionally set bounded `follow_up_instructions` as one validated change; never overwrite prior source text. |
 | `POST /visits/{visit_id}/complete` | assigned doctor | **Idempotent, Versioned.** Validate and atomically finalize notes/prescription and complete the appointment (`VISIT-002`). External work continues asynchronously. |
 | `POST /visits/{visit_id}/amendments` | assigned doctor | **Idempotent, Versioned.** Append a reasoned correction to a completed visit; do not mutate historical content. |
 

@@ -369,7 +369,7 @@ export interface Visit {
   notes?: VisitNote[];
   doctor_notes?: string; // Helper mapping to notes or latest note text
   diagnosis?: string;
-  follow_up_instructions?: string;
+  follow_up_instructions?: string | null;
   prescription?: Prescription | null;
   generated_artifacts?: GeneratedArtifact[];
   created_at: string;
@@ -394,7 +394,7 @@ export interface PatientVisit {
   completed_at: string;
   doctor_notes?: string;
   diagnosis?: string;
-  follow_up_instructions?: string;
+  follow_up_instructions?: string | null;
   ai_patient_summary?: string;
 }
 
@@ -404,6 +404,7 @@ export interface VisitUpdateRequest {
   urgency?: "routine" | "soon" | "urgent" | null;
   prescription_items?: PrescriptionItemInput[] | null;
   advisory_text?: string | null;
+  follow_up_instructions?: string | null;
 }
 
 export interface VisitCompleteRequest {

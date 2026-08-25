@@ -1327,6 +1327,8 @@ class DomainService:
             )
             if request.urgency is not None:
                 visit.urgency = request.urgency
+            if "follow_up_instructions" in request.model_fields_set:
+                visit.follow_up_instructions = request.follow_up_instructions
             visit.version += 1
             _bump_version(visit)
             prescription = await self.session.scalar(
@@ -1938,6 +1940,7 @@ class DomainService:
             "status": visit.status,
             "version": visit.version,
             "urgency": visit.urgency,
+            "follow_up_instructions": visit.follow_up_instructions,
             "created_at": visit.created_at,
             "updated_at": visit.updated_at,
             "completed_at": visit.completed_at,
@@ -2013,6 +2016,7 @@ class DomainService:
             "status": "completed",
             "version": visit.version,
             "urgency": visit.urgency,
+            "follow_up_instructions": visit.follow_up_instructions,
             "prescription": None
             if prescription is None
             else {

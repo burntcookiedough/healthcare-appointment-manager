@@ -107,6 +107,74 @@ describe("FastAPI Contract Integration & Wire Accuracy Suite", () => {
     expect(mockFetch.mock.calls[1][0]).toBe("http://127.0.0.1:8000/api/v1/health/ready");
   });
 
+  it("keeps the HTTP timeout signal active until a successful response body is consumed", async () => {
+    vi.useFakeTimers();
+    setApiAuthToken(null);
+    let requestSignal: AbortSignal | undefined;
+    let resolveBody: ((value: { status: string }) => void) | undefined;
+    mockFetch.mockImplementationOnce((_url: string, init: RequestInit) => {
+      requestSignal = init.signal ?? undefined;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          new Promise<{ status: string }>((resolve) => {
+            resolveBody = resolve;
+          }),
+      });
+    });
+
+    try {
+      const pending = apiClient.getHealthLive();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(requestSignal?.aborted).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(requestSignal?.aborted).toBe(true);
+
+      resolveBody?.({ status: "ok" });
+      await expect(pending).resolves.toEqual({ status: "ok" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the HTTP timeout signal active while consuming an error envelope", async () => {
+    vi.useFakeTimers();
+    setApiAuthToken(null);
+    let requestSignal: AbortSignal | undefined;
+    let resolveBody: ((value: { error: { code: string; message: string } }) => void) | undefined;
+    mockFetch.mockImplementationOnce((_url: string, init: RequestInit) => {
+      requestSignal = init.signal ?? undefined;
+      return Promise.resolve({
+        ok: false,
+        status: 422,
+        statusText: "Unprocessable Entity",
+        json: () =>
+          new Promise<{ error: { code: string; message: string } }>((resolve) => {
+            resolveBody = resolve;
+          }),
+      });
+    });
+
+    try {
+      const pending = apiClient.getHealthLive();
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(requestSignal?.aborted).toBe(true);
+
+      resolveBody?.({ error: { code: "VALIDATION_FAILED", message: "Synthetic error" } });
+      await expect(pending).rejects.toMatchObject({
+        status: 422,
+        error: { code: "VALIDATION_FAILED" },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("4. Doctor availability unwraps { items, next_cursor } envelope cleanly", async () => {
     setApiAuthToken("valid-token");
     mockFetch.mockResolvedValueOnce({
@@ -353,6 +421,7 @@ describe("FastAPI Contract Integration & Wire Accuracy Suite", () => {
       expected_version: 1,
       notes_text: "Updated notes",
       advisory_text: "Hypertension",
+      follow_up_instructions: "Follow up in two weeks",
       prescription_items: [],
     });
   });

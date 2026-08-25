@@ -946,7 +946,8 @@ class MockDatabase {
     notes: string,
     diagnosis: string,
     prescriptionItems: PrescriptionItem[],
-    expectedVersion?: number
+    expectedVersion?: number,
+    followUpInstructions?: string | null
   ): Promise<Visit> {
     await this.simulateNetwork();
     const visit = this.visits.get(visitId);
@@ -970,6 +971,9 @@ class MockDatabase {
 
     visit.doctor_notes = notes;
     visit.diagnosis = diagnosis;
+    if (followUpInstructions !== undefined) {
+      visit.follow_up_instructions = followUpInstructions;
+    }
     if (visit.prescription) {
       visit.prescription.items = draftItems;
       visit.prescription.updated_at = new Date().toISOString();

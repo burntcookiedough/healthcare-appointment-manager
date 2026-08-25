@@ -23,7 +23,7 @@ from healthcare_api.booking import (
 )
 from healthcare_api.config import Settings
 from healthcare_api.domain import deterministic_occurrences
-from healthcare_api.domain_schemas import PatientVisitResponse
+from healthcare_api.domain_schemas import PatientVisitResponse, VisitUpdateRequest
 from healthcare_api.errors import ApiError
 from healthcare_api.main import app
 from healthcare_api.models import PrescriptionItem
@@ -304,6 +304,7 @@ def test_patient_visit_projection_has_no_doctor_only_fields() -> None:
         "status": "completed",
         "version": 3,
         "urgency": "routine",
+        "follow_up_instructions": "Return in three weeks with a fasting lipid profile.",
         "prescription": None,
         "generated_artifacts": [],
         "created_at": "2026-08-24T08:30:00Z",
@@ -311,6 +312,9 @@ def test_patient_visit_projection_has_no_doctor_only_fields() -> None:
         "completed_at": "2026-08-24T09:00:00Z",
     }
     projection = PatientVisitResponse.model_validate(payload)
+    assert projection.follow_up_instructions == (
+        "Return in three weeks with a fasting lipid profile."
+    )
     assert not hasattr(projection, "notes")
     assert not hasattr(projection, "advisory_text")
     with pytest.raises(ValidationError):
@@ -331,4 +335,20 @@ def test_patient_visit_projection_has_no_doctor_only_fields() -> None:
                     }
                 ],
             }
+        )
+
+
+def test_visit_follow_up_instructions_are_optional_and_bounded() -> None:
+    request = VisitUpdateRequest(
+        expected_version=1,
+        notes_text="Synthetic clinical note",
+        follow_up_instructions="Return in three weeks.",
+    )
+    assert request.follow_up_instructions == "Return in three weeks."
+
+    with pytest.raises(ValidationError):
+        VisitUpdateRequest(
+            expected_version=1,
+            notes_text="Synthetic clinical note",
+            follow_up_instructions="x" * 10001,
         )

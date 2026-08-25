@@ -153,6 +153,7 @@ export default function DoctorVisitEditorPage() {
     mutationFn: async () => {
       return apiClient.saveVisitDraft(visitId, notes, diagnosis, prescriptionItems, {
         expectedVersion: visit?.version,
+        followUpInstructions: followUp,
       });
     },
     onSuccess: (savedVisit) => {
@@ -180,8 +181,12 @@ export default function DoctorVisitEditorPage() {
       queryClient.invalidateQueries({ queryKey: ["doctor-appointments"] });
       router.push("/doctor");
     },
-    onError: (err: { error?: { message?: string } }) => {
+    onError: async (err: { error?: { message?: string } }) => {
       toast.error(err?.error?.message || "Failed to finalize consultation.");
+      // The draft PATCH runs before completion. If completion fails after that
+      // write, refresh the appointment-keyed query so the next retry uses the
+      // persisted draft version and completed state.
+      await queryClient.invalidateQueries({ queryKey: ["doctor-visit", appointmentId] });
     },
   });
 
